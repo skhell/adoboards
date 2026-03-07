@@ -1,6 +1,7 @@
 ## NPM CLI for Azure DevOps Boards<!-- omit in toc -->
 
 ![adoboards](.github/media/homer.gif)
+
 _If you feel like **Homer Simpson backing into bushes** right before sprint review, you are in the right place._
 
 I think this Homer represents all of us. With everything we need to do, somebody asks us to be our own secretary, writing down incredibly boring things called "features or user stories" to participate in boring meetings called "ceremonies" nobody follow and when I first heard that word I genuinely thought it was some kind of cult.
