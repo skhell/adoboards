@@ -4,21 +4,25 @@
 
 _If you feel like **Homer Simpson backing into bushes** right before sprint review, you are in the right place._
 
-I think this Homer represents all of us. With everything we need to do, somebody asks us to be our own secretary, writing down incredibly boring things called "features or user stories" to participate in boring meetings called "ceremonies" nobody follow and when I first heard that word I genuinely thought it was some kind of cult.
-Don't misunderstand me **Scrum** is genuinely good _if used properly_. But 99.999% of the time, from my personal experience, it's so misused it became quite a **Scam** to me.
+We've all been there. You're very busy into actual work and then someone reminds you that your user stories need descriptions, acceptance criteria, t-shirt sizes, and business value fields filled in before tomorrow's ceremony. The first time I heard "ceremony" I genuinely thought it was some kind of cult initiation.
 
-I think if managers stopped for a moment to calculate the total waste of time people sink into this, they'd immediately realize that some roles aren't needed  like some Scrum Master's who doesn't know anything about your job but pretends to pressure you above the limit every sprint. After nearly 20 years in the industry I can definitely say: **scrum is useless for architecure and infrastructure it's a total waste of time** Just stop and ask yourself ceremonies and roles and bla bla bla are so complex that a Certified or Professional **Scam** Master is needed?.
+Don't get me wrong **Scrum** and the job of **Scam Masters** are genuinely good _when used properly_. But let's be honest: most of us have seen it applied in ways that create more overhead than value, especially for architecture and infrastructure work where the real complexity lives in the system design, not in a Jira ticket template.
 
-So in the era of LLMs, I thought I'd alleviate my pains by building a CLI utility that pulls all your Epics, Features, and User Stories from Azure DevOps Boards, organizes them in a local hierarchy, and lets AI do the soul-crushing writing for you.
+After nearly 20 years in the industry, I noticed something: the time spent writing and grooming work items is often disproportionate to the value they deliver. So inspired by `git` cli commands I built a tool to fix that.
+
+**adoboards** is a CLI that pulls your Epics, Features, and User Stories from Azure DevOps Boards, organizes them locally as markdown files, and **optionally** lets AI handle the tedious writing for you.
 
 You can quickly:
 1. Work from CLI with git-like commands (`clone`, `push`, `pull`, `status`, `diff`, `add`)
-2. Generate Epics, Features, and User Stories assisted by **Claude**, **ChatGPT**, or **Gemini** with your API key safely stored in KeePass locally
-3. Once you've cloned your boards locally, ask LLMs to **optimize** them for you so you stop asking yourself _"what the hell do I choose for t-shirt size, business value, or other meaningless fields"_
-4. **Plan** entire sprints with AI-powered capacity distribution because you have better things to do
-5. Generate **sprint reports** from local state in seconds ready to paste into that ceremony email nobody reads or **scam** meetings everyone follow with 100% attention of camera and mic off
+2. Create work items from templates manually - no AI required, no corporate restrictions
+3. **Optionally** generate Epics, Features, and User Stories with **Claude**, **ChatGPT**, or **Gemini** - API keys safely stored in KeePass
+4. Let AI **optimize** existing items so you stop guessing _"what do I pick for t-shirt size or business value?"_
+5. **Plan** entire sprints with AI-powered capacity distribution
+6. Generate **sprint reports** from local state in seconds - ready to paste into emails or meetings
 
-Let LLMs work for us, so we can dedicate time to what we're actually paid for instead of burning out doing the job of others.
+The CLI is **fully functional without AI**. Clone, edit, push, pull, status - all work with just your ADO PAT. AI features (`gen`, `optimize`, `plan`) are there when you want them, but never mandatory. If your org restricts API access, you lose nothing - the core workflow stands on its own.
+
+Less time writing about work, more time doing the work.
 
 ## Table of content<!-- omit in toc -->
 - [Install guide](#install-guide)
@@ -47,7 +51,7 @@ Let LLMs work for us, so we can dedicate time to what we're actually paid for in
 - **Node.js 18+** (ESM modules)
 - **KeePassXC** (recommended) with `keepassxc-cli` configured on your `PATH` for secrets management
 - An **Azure DevOps** organization with Boards enabled
-- At least one AI provider API key (Anthropic, OpenAI, or Google Gemini)
+- **Optional:** an AI provider API key (Anthropic, OpenAI, or Google Gemini) for content generation features
 
 ### Install from npm
 
@@ -81,7 +85,7 @@ It will ask for:
 2. A **default area path** (e.g. `YourTeam/DCArchitecture`)
 3. **Secrets backend** KeePass (recommended), OS keychain, or local env vars
 4. Path to your **`.kdbx` file** (if using KeePass)
-5. Your preferred **AI provider** (Anthropic / OpenAI / Gemini)
+5. Your preferred **AI provider** (optional - skip if you don't have API access)
 6. **Team capacity** team size, velocity per person, sprint length
 
 Or skip the wizard and set the secrets backend directly:
@@ -193,7 +197,7 @@ If KeePassXC desktop is already open and unlocked, the secret service socket kic
 | `openai-key` | OpenAI ChatGPT API key |
 | `gemini-key` | Google Gemini API key |
 
-You only need `ado-pat` + whichever AI provider you chose. Not all four.
+You only need `ado-pat` to use the CLI. AI provider keys are optional - add one only if you want `gen`, `optimize`, or `plan` features. Not all four.
 
 #### How to get your Azure DevOps PAT (even with corporate SSO)
 If your org uses single sign-on (SAML, Entra ID, ADFS, etc.) you can still create a PAT SSO handles the browser login, and the PAT is generated _after_ you're authenticated.

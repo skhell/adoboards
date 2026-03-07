@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **AI is now optional** - CLI works fully without an AI provider
+  - Config wizard defaults to `none` for AI provider, with clear skip guidance
+  - README updated to clarify AI features (`gen`, `optimize`, `plan`) are opt-in
+  - Only `ado-pat` is required in KeePass - AI keys are optional
+
+### Fixed
+
+- **`adoboards clone`** - Improved year-filtering regex for iteration folders
+  - Now catches patterns like `Q1 2025`, `Y21-A1`, `FY25`, and year with space/dash boundaries
+  - Previous regex only matched years bounded by path separators, missing common ADO iteration naming patterns
+
+### Added
+
+- **`adoboards status`**  - Show modified, staged, new (id: pending), deleted, and untracked work items
+  - Compares local frontmatter against refs.json snapshot
+  - Works fully offline  - no ADO API calls
+- **`adoboards add <files...>`**  - Stage files for push
+  - Supports individual files, directories, or `.` for all markdown files
+  - Deduplicates staged entries
+- **`adoboards push [file]`**  - Push work items to Azure DevOps
+  - Creates new items (`id: pending` -> POST, writes back real ID to file)
+  - Updates existing items (PATCH only changed fields for minimal API calls)
+  - Parent linking via `System.LinkTypes.Hierarchy-Reverse` relations
+  - Clears staging after successful push
+- **`adoboards pull`**  - Pull remote changes from Azure DevOps
+  - Fetches items modified since last sync using saved filters (area, state, assignee)
+  - Conflict detection: local + remote changes -> writes `.remote.md` for manual diff
+  - Updates refs.json and lastSync timestamp
+
 ## [0.1.0] - 2026-03-07
 
 ### Added

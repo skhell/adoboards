@@ -104,7 +104,7 @@ export default async function configCommand(opts) {
       console.log(chalk.dim('     anthropic-key      Anthropic Claude API key'));
       console.log(chalk.dim('     openai-key         OpenAI ChatGPT API key'));
       console.log(chalk.dim('     gemini-key         Google Gemini API key'));
-      console.log(chalk.dim('\n     You only need ado-pat + your chosen AI provider. Not all four.\n'));
+      console.log(chalk.dim('\n     Only ado-pat is required. AI keys are optional for gen/optimize/plan.\n'));
       console.log(chalk.bold('  How to get your Azure DevOps PAT (even with corporate SSO):\n'));
       console.log(chalk.dim('  1. Sign in to Azure DevOps in your browser (SSO handles auth)'));
       console.log(chalk.dim('  2. Click your profile icon (top right) -> "Personal access tokens"'));
@@ -130,28 +130,39 @@ export default async function configCommand(opts) {
       console.log(chalk.dim('  NEVER commit .env - it is in .gitignore but double-check.\n'));
     }
 
-    // 6. AI provider
+    // 6. AI provider (optional)
+    console.log(chalk.bold('\nAI Provider (optional)'));
+    console.log(chalk.dim('  Skip if you don\'t have API access - CLI works fully without AI.'));
+    console.log(chalk.dim('  AI is only needed for: gen, optimize, plan commands.\n'));
     const aiProvider = await askChoice(
       rl,
       'AI provider',
-      ['anthropic', 'openai', 'gemini'],
-      config.get('aiProvider') || 'anthropic',
+      ['none', 'anthropic', 'openai', 'gemini'],
+      config.get('aiProvider') || 'none',
     );
-    config.set('aiProvider', aiProvider);
+    if (aiProvider === 'none') {
+      config.delete('aiProvider');
+      console.log(chalk.dim('  AI features disabled - you can enable later with: adoboards config'));
+    } else {
+      config.set('aiProvider', aiProvider);
 
-    const keyNames = { anthropic: 'anthropic-key', openai: 'openai-key', gemini: 'gemini-key' };
-    const keyUrls = {
-      anthropic: 'https://console.anthropic.com/settings/keys',
-      openai: 'https://platform.openai.com/api-keys',
-      gemini: 'https://aistudio.google.com/apikey',
-    };
-    if (secretsBackend === 'keepass') {
-      console.log(chalk.dim(`  Ensure adoboards/${keyNames[aiProvider]} exists in your KeePass database`));
-      console.log(chalk.dim('  Get your API key here: ') + chalk.cyan.underline(keyUrls[aiProvider]));
+      const keyNames = { anthropic: 'anthropic-key', openai: 'openai-key', gemini: 'gemini-key' };
+      const keyUrls = {
+        anthropic: 'https://console.anthropic.com/settings/keys',
+        openai: 'https://platform.openai.com/api-keys',
+        gemini: 'https://aistudio.google.com/apikey',
+      };
+      if (secretsBackend === 'keepass') {
+        console.log(chalk.dim(`  Ensure adoboards/${keyNames[aiProvider]} exists in your KeePass database`));
+        console.log(chalk.dim('  Get your API key here: ') + chalk.cyan.underline(keyUrls[aiProvider]));
+      }
     }
 
-    // 7. Team capacity
-    console.log(chalk.bold('\nTeam Capacity'));
+    // 7. Team capacity (optional - only for plan command)
+    console.log(chalk.bold('\nTeam Capacity (optional)'));
+    console.log(chalk.dim('  Used by the "plan" command to distribute stories across sprints.'));
+    console.log(chalk.dim('  It calculates how many story points fit per sprint based on your team.'));
+    console.log(chalk.dim('  Skip if you don\'t use sprint planning or prefer to assign manually.\n'));
     const teamSize = await ask(rl, 'Team size (number of people)', String(config.get('teamSize') || ''));
     if (teamSize) config.set('teamSize', Number(teamSize));
 
@@ -168,7 +179,7 @@ export default async function configCommand(opts) {
     if (config.get('defaultArea')) console.log(`  Area:      ${chalk.cyan(config.get('defaultArea'))}`);
     console.log(`  Secrets:   ${chalk.cyan(config.get('secretsBackend'))}`);
     if (config.get('keepassDbPath')) console.log(`  KeePass:   ${chalk.cyan(config.get('keepassDbPath'))}`);
-    console.log(`  AI:        ${chalk.cyan(config.get('aiProvider'))}`);
+    console.log(`  AI:        ${chalk.cyan(config.get('aiProvider') || 'none')}`);
     if (config.get('teamSize')) {
       console.log(`  Team:      ${chalk.cyan(config.get('teamSize'))} people, ${chalk.cyan(config.get('velocityPerPerson'))} pts/person, ${chalk.cyan(config.get('sprintLengthDays'))}-day sprints`);
     }
