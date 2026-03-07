@@ -31,6 +31,20 @@ program
   });
 
 program
+  .command('new <type>')
+  .description('Create a new work item from template (epic, feature, story, bug, task)')
+  .option('--title <title>', 'Set the work item title')
+  .option('--area <path>', 'Set the area path')
+  .option('--iteration <path>', 'Set the iteration path')
+  .option('--parent <id>', 'Set the parent work item ID')
+  .option('--assignee <email>', 'Set assignee (default: your email from clone)')
+  .option('--dir <path>', 'Output directory (default: current directory)')
+  .action(async (type, opts) => {
+    const { default: newCommand } = await import('../src/commands/new.js');
+    newCommand(type, opts);
+  });
+
+program
   .command('status')
   .description('Show modified, staged, new, and deleted work items')
   .action(async () => {
