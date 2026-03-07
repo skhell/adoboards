@@ -1,0 +1,6 @@
+node_modules/
+.adoboards/
+.env
+*.log
+.DS_Store
+*.tgz

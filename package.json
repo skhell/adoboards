@@ -1,0 +1,27 @@
+{
+  "name": "adoboards",
+  "version": "0.1.0",
+  "description": "Git-like CLI for Azure DevOps Boards with AI generation",
+  "type": "module",
+  "bin": {
+    "adoboards": "./bin/adoboards.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "chalk": "^5.3.0",
+    "cli-table3": "^0.6.3",
+    "commander": "^11.0.0",
+    "conf": "^12.0.0",
+    "gray-matter": "^4.0.3",
+    "keytar": "^7.9.0"
+  },
+  "devDependencies": {
+    "vitest": "^1.0.0"
+  }
+}
