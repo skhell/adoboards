@@ -89,7 +89,18 @@ export default async function cloneCommand(url, opts = {}) {
   console.log(chalk.bold(`Cloning ${project} from ${orgUrl}...\n`));
   console.log(chalk.dim(`  Filters: ${filters.join(' | ')}\n`));
 
-  // 1. Fetch areas and iterations
+  // 1. Resolve current user identity
+  let userEmail = '';
+  process.stdout.write('  Resolving identity... ');
+  try {
+    const me = await ado.whoAmI(orgUrl);
+    userEmail = me.email;
+    console.log(chalk.green(userEmail || me.displayName || 'done'));
+  } catch {
+    console.log(chalk.yellow('skipped (non-fatal)'));
+  }
+
+  // 2. Fetch areas and iterations
   process.stdout.write('  Fetching areas... ');
   const areas = await ado.getAreas(orgUrl, project);
   console.log(chalk.green('done'));
@@ -203,6 +214,7 @@ export default async function cloneCommand(url, opts = {}) {
   if (since) cloneConfig.sinceFilter = since;
   if (!opts.all) cloneConfig.stateFilter = ['New', 'Active', 'Resolved'];
   if (assignees) cloneConfig.assigneeFilter = assignees;
+  if (userEmail) cloneConfig.userEmail = userEmail;
   writeConfig(targetDir, cloneConfig);
 
   writeRefs(targetDir, refs);

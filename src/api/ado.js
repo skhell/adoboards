@@ -14,8 +14,20 @@ export const FIELD_MAP = {
   storyPoints: 'Microsoft.VSTS.Scheduling.StoryPoints',
   businessValue: 'Microsoft.VSTS.Common.BusinessValue',
   acceptanceCriteria: 'Microsoft.VSTS.Common.AcceptanceCriteria',
+  reproSteps: 'Microsoft.VSTS.TCM.ReproSteps',
+  systemInfo: 'Microsoft.VSTS.TCM.SystemInfo',
   tags: 'System.Tags',
   parent: 'System.Parent',
+};
+
+// Valid ## headings per work item type (lowercase)
+export const TYPE_HEADINGS = {
+  Epic:          ['description'],
+  Feature:       ['description', 'acceptance criteria'],
+  'User Story':  ['description', 'acceptance criteria'],
+  Bug:           ['repro steps', 'system info'],
+  Task:          ['description'],
+  Issue:         ['description'],
 };
 
 async function makeHeaders() {
@@ -33,6 +45,21 @@ function baseUrl(orgUrl, project) {
     throw new Error('ADO org URL and project not configured. Run: adoboards config');
   }
   return `${org.replace(/\/$/, '')}/${encodeURIComponent(proj)}/_apis`;
+}
+
+export async function whoAmI(orgUrl) {
+  const headers = await makeHeaders();
+  const org = orgUrl.replace(/\/$/, '');
+  const res = await axios.get(`${org}/_apis/connectionData`, {
+    headers,
+    params: { 'api-version': API_VERSION },
+  });
+  const user = res.data.authenticatedUser;
+  return {
+    displayName: user.providerDisplayName || user.customDisplayName || '',
+    email: user.properties?.Account?.$value || '',
+    id: user.id || '',
+  };
 }
 
 export async function getAreas(orgUrl, project) {

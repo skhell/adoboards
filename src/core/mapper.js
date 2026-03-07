@@ -1,6 +1,6 @@
 import matter from 'gray-matter';
 import { readFileSync } from 'node:fs';
-import { FIELD_MAP } from '../api/ado.js';
+import { FIELD_MAP, TYPE_HEADINGS } from '../api/ado.js';
 
 const TSHIRT_MAP = { 1: 'XS', 3: 'S', 5: 'M', 8: 'L', 13: 'XL' };
 const TSHIRT_REVERSE = { XS: 1, S: 3, M: 5, L: 8, XL: 13 };
@@ -66,15 +66,28 @@ export function adoToFrontmatter(workItem) {
 export function adoToMarkdown(workItem) {
   const fm = adoToFrontmatter(workItem);
   const f = workItem.fields;
+  const type = f['System.WorkItemType'];
 
   const sections = [];
 
-  const description = htmlToSimpleMarkdown(f['System.Description'] || '');
-  sections.push(`## Description\n\n${description || '_No description_'}`);
+  if (type === 'Bug') {
+    const repro = htmlToSimpleMarkdown(f['Microsoft.VSTS.TCM.ReproSteps'] || '');
+    sections.push(`## Repro Steps\n\n${repro || '_No repro steps_'}`);
 
-  const acceptance = htmlToSimpleMarkdown(f['Microsoft.VSTS.Common.AcceptanceCriteria'] || '');
-  if (acceptance) {
-    sections.push(`## Acceptance Criteria\n\n${acceptance}`);
+    const sysInfo = htmlToSimpleMarkdown(f['Microsoft.VSTS.TCM.SystemInfo'] || '');
+    if (sysInfo) {
+      sections.push(`## System Info\n\n${sysInfo}`);
+    }
+  } else {
+    const description = htmlToSimpleMarkdown(f['System.Description'] || '');
+    sections.push(`## Description\n\n${description || '_No description_'}`);
+
+    if (type === 'Feature' || type === 'User Story') {
+      const acceptance = htmlToSimpleMarkdown(f['Microsoft.VSTS.Common.AcceptanceCriteria'] || '');
+      if (acceptance) {
+        sections.push(`## Acceptance Criteria\n\n${acceptance}`);
+      }
+    }
   }
 
   const body = sections.join('\n\n');
@@ -100,6 +113,8 @@ export function markdownToFields(filePath) {
   const parsed = parseSections(body);
   if (parsed.description != null) fields.description = parsed.description;
   if (parsed.acceptanceCriteria != null) fields.acceptanceCriteria = parsed.acceptanceCriteria;
+  if (parsed.reproSteps != null) fields.reproSteps = parsed.reproSteps;
+  if (parsed.systemInfo != null) fields.systemInfo = parsed.systemInfo;
 
   return { id: data.id, type: data.type, fields, parent: data.parent };
 }
@@ -119,6 +134,10 @@ function parseSections(body) {
       result.description = content === '_No description_' ? '' : content;
     } else if (heading === 'acceptance criteria') {
       result.acceptanceCriteria = content;
+    } else if (heading === 'repro steps') {
+      result.reproSteps = content === '_No repro steps_' ? '' : content;
+    } else if (heading === 'system info') {
+      result.systemInfo = content;
     }
   }
 
@@ -195,6 +214,69 @@ function findParent(workItem, parentMap) {
   if (!parentRel) return null;
   const parentId = Number(parentRel.url.split('/').pop());
   return parentMap.get(parentId) || null;
+}
+
+const ALL_KNOWN_HEADINGS = ['description', 'acceptance criteria', 'repro steps', 'system info'];
+
+/**
+ * Validate ## headings in a work item markdown file.
+ * Returns an array of { heading, suggestion } for unrecognized headings.
+ * Checks against valid headings for the specific work item type.
+ */
+export function validateHeadings(filePath) {
+  const content = readFileSync(filePath, 'utf-8');
+  const { data, content: body } = matter(content);
+  const sections = body.split(/^## /m).filter(Boolean);
+  const warnings = [];
+
+  // Get valid headings for this type
+  const adoType = data.type === 'Story' ? 'User Story' : data.type;
+  const validForType = TYPE_HEADINGS[adoType] || ['description'];
+
+  for (const section of sections) {
+    const newlineIdx = section.indexOf('\n');
+    const heading = (newlineIdx === -1 ? section : section.slice(0, newlineIdx)).trim();
+    if (!heading) continue;
+    const headingLower = heading.toLowerCase();
+
+    if (validForType.includes(headingLower)) continue;
+
+    // Try to find a close match within the valid headings for this type first, then all known
+    const suggestion = findClosest(headingLower, validForType) || findClosest(headingLower, ALL_KNOWN_HEADINGS);
+    const wrongType = ALL_KNOWN_HEADINGS.includes(headingLower) && !validForType.includes(headingLower);
+    warnings.push({ heading, suggestion, wrongType, type: data.type });
+  }
+
+  return warnings;
+}
+
+function findClosest(input, candidates) {
+  let best = null;
+  let bestDist = Infinity;
+  for (const c of candidates) {
+    const dist = levenshtein(input, c);
+    if (dist < bestDist && dist <= 3) {
+      bestDist = dist;
+      best = c;
+    }
+  }
+  return best;
+}
+
+function levenshtein(a, b) {
+  const m = a.length;
+  const n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
 }
 
 export function buildParentMap(workItems) {
