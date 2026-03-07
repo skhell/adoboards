@@ -7,7 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`adoboards new <type>`** - Create work items from templates without AI
+  - Supports: epic, feature, story, bug, task
+  - `--title`, `--area`, `--iteration`, `--parent`, `--dir` flags
+  - Auto-populates area from clone config if available
+  - Bug and task reuse the story template with corrected type
+  - File naming: `PREFIX-pending-slug.md` (e.g. `STORY-pending-deploy-dns.md`)
+  - Workflow: `new` -> edit -> `add` -> `push`
+
 ### Changed
+
+- **Templates match ADO field types** - each type has its own template with correct sections
+  - Epic/Task/Issue: `## Description`
+  - Feature/Story: `## Description` + `## Acceptance Criteria`
+  - Bug: `## Repro Steps` + `## System Info`
+  - Dedicated `bug.md` and `task.md` templates added
+- **`adoboards push`** - Pre-push validation
+  - Type-aware heading validation (e.g. Bug with `## Description` is flagged)
+  - Catches typos like `## Desciption` with "did you mean?" suggestions
+  - Assignee format validation (must be an email)
+  - Better ADO API error messages for invalid assignees
+  - Shows valid headings per type when errors found
+- **`adoboards new`** - Auto-populates assignee from your identity (resolved during clone)
+- **`adoboards clone`** - Resolves your ADO identity via connectionData API and saves email
 
 - **AI is now optional** - CLI works fully without an AI provider
   - Config wizard defaults to `none` for AI provider, with clear skip guidance
@@ -16,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **All commands** - Now work from any subdirectory inside the project (walks up to find `.adoboards/`, like git)
 - **`adoboards clone`** - Improved year-filtering regex for iteration folders
   - Now catches patterns like `Q1 2025`, `Y21-A1`, `FY25`, and year with space/dash boundaries
   - Previous regex only matched years bounded by path separators, missing common ADO iteration naming patterns

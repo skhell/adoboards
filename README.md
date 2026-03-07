@@ -330,6 +330,54 @@ YourProject/
                     |--- Sprint-4/
 ```
 
+### Create new work items (no AI needed)
+
+Create items in your backlog first, then move them into sprints when they're ready - just like you would in ADO:
+
+```bash
+# Create items directly in the backlog folder
+adoboards new story --title "Deploy DNS resolver east-us" --dir areas/TeamName/backlog
+adoboards new feature --title "Automate firewall rules" --parent 42 --dir areas/TeamName/backlog
+adoboards new epic --title "Zero trust network segmentation" --dir areas/TeamName/backlog
+adoboards new bug --title "DNS timeout under load" --dir areas/TeamName/backlog
+adoboards new task --title "Update runbook for failover" --dir areas/TeamName/backlog
+```
+
+Each command creates a blank template with `id: pending`. Open it in your editor, fill in the details, then push:
+
+```bash
+adoboards add areas/TeamName/backlog/STORY-pending-deploy-dns-resolver-east-us.md
+adoboards push
+```
+
+#### Moving items into sprints
+
+When a story is ready for a sprint, move the file from `backlog/` to the sprint folder and update the `iteration` field in the frontmatter. You can do this from VSCode (drag and drop) or from the terminal:
+
+```bash
+mv areas/TeamName/backlog/STORY-pending-deploy-dns.md areas/TeamName/iterations/2026-Q2/Sprint-4/
+```
+
+Then edit the frontmatter to match:
+
+```yaml
+iteration: "YourProject\2026-Q2\Sprint-4"
+```
+
+Push the change and ADO picks up the new sprint assignment.
+
+#### Other options
+
+```bash
+# Set area and iteration at creation time (skip backlog, go straight to sprint)
+adoboards new story --title "Urgent fix" --iteration "2026-Q2/Sprint-4" --dir areas/TeamName/iterations/2026-Q2/Sprint-4
+
+# Create in current directory (if you're already in the right folder)
+adoboards new story --title "Quick item"
+```
+
+Area is auto-populated from your clone config if `--area` is not provided.
+
 ### Check what changed
 
 ```bash
