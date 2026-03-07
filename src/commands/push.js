@@ -3,7 +3,7 @@ import chalk from 'chalk';
 import matter from 'gray-matter';
 import * as ado from '../api/ado.js';
 import { readRefs, writeRefs, readStaged, writeStaged, readConfig } from '../core/state.js';
-import { markdownToFields } from '../core/mapper.js';
+import { markdownToFields, validateHeadings } from '../core/mapper.js';
 
 export default async function pushCommand(file) {
   const config = readConfig('.');
@@ -59,6 +59,28 @@ export default async function pushCommand(file) {
         continue;
       }
 
+      // Validate title is present
+      if (!data.title || !String(data.title).trim()) {
+        skipped.push({ path: filePath, reason: 'empty title (required by ADO)' });
+        continue;
+      }
+
+      // Validate state if present
+      const validStates = ['New', 'Active', 'Resolved', 'Closed', 'Removed'];
+      if (data.state && !validStates.includes(data.state)) {
+        skipped.push({ path: filePath, reason: `invalid state "${data.state}" (use: ${validStates.join(', ')})` });
+        continue;
+      }
+
+      // Validate assignee format if present
+      if (data.assignee && typeof data.assignee === 'string' && data.assignee.trim()) {
+        const email = data.assignee.trim();
+        if (!email.includes('@')) {
+          skipped.push({ path: filePath, reason: `invalid assignee "${email}" (must be an email)` });
+          continue;
+        }
+      }
+
       validFiles.push(filePath);
     } catch {
       skipped.push({ path: filePath, reason: 'cannot parse frontmatter' });
@@ -72,6 +94,39 @@ export default async function pushCommand(file) {
 
   if (!validFiles.length) {
     console.log(chalk.yellow('\n  No valid work items to push.\n'));
+    return;
+  }
+
+  // Validate headings before pushing
+  const headingWarnings = [];
+  for (const filePath of validFiles) {
+    const warnings = validateHeadings(filePath);
+    for (const w of warnings) {
+      headingWarnings.push({ file: filePath, ...w });
+    }
+  }
+
+  if (headingWarnings.length) {
+    console.log(chalk.yellow('\n  Heading warnings (unrecognized sections will be ignored by ADO):\n'));
+    console.log(chalk.yellow('  +' + '-'.repeat(40) + '+' + '-'.repeat(50) + '+'));
+    console.log(chalk.yellow('  | File' + ' '.repeat(35) + '| Issue' + ' '.repeat(44) + '|'));
+    console.log(chalk.yellow('  +' + '-'.repeat(40) + '+' + '-'.repeat(50) + '+'));
+    for (const w of headingWarnings) {
+      const file = w.file.length > 38 ? '...' + w.file.slice(-35) : w.file.padEnd(38);
+      const issue = w.wrongType
+        ? `"## ${w.heading}" not valid for ${w.type} type`
+        : w.suggestion
+          ? `"## ${w.heading}" -> did you mean "## ${w.suggestion}"?`
+          : `"## ${w.heading}" (not an ADO field)`;
+      const issueStr = issue.length > 48 ? issue.slice(0, 45) + '...' : issue.padEnd(48);
+      console.log(chalk.yellow(`  | ${file} | ${issueStr} |`));
+    }
+    console.log(chalk.yellow('  +' + '-'.repeat(40) + '+' + '-'.repeat(50) + '+'));
+    console.log(chalk.yellow('\n  Valid headings per type:'));
+    console.log(chalk.yellow('    Epic/Task/Issue:     ## Description'));
+    console.log(chalk.yellow('    Feature/Story:       ## Description, ## Acceptance Criteria'));
+    console.log(chalk.yellow('    Bug:                 ## Repro Steps, ## System Info'));
+    console.log(chalk.yellow('  Fix the headings or remove unknown sections.\n'));
     return;
   }
 
@@ -152,7 +207,12 @@ export default async function pushCommand(file) {
         updated++;
       }
     } catch (err) {
-      console.log(chalk.red(`\n  Error: ${filePath} - ${err.message}`));
+      const msg = err.response?.data?.message || err.message;
+      if (msg.includes('identity') || msg.includes('AssignedTo')) {
+        console.log(chalk.red(`\n  Error: ${filePath} - invalid assignee (user not found in ADO)`));
+      } else {
+        console.log(chalk.red(`\n  Error: ${filePath} - ${msg}`));
+      }
       errors++;
     }
   }
