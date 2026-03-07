@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`adoboards clone <url>`** - Clone ADO Boards to local markdown files
   - Parses project from URL (supports `dev.azure.com` and `visualstudio.com`)
   - `--area` flag to scope clone to a specific area path and all sub-areas
-  - Builds full folder hierarchy: `areas/` → `backlog/` and `iterations/`
+  - Builds full folder hierarchy: `areas/` -> `backlog/` and `iterations/`
   - Epics, Features get their own folders; Stories/Bugs/Tasks are individual files
   - Saves state to `.adoboards/config.json` and `refs.json`
 - **`src/core/secrets.js`** - Pluggable secrets backend

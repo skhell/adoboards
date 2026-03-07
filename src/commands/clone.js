@@ -30,7 +30,7 @@ function parseAdoUrl(url) {
 
   const segments = parsed.pathname.split('/').filter(Boolean);
 
-  // https://dev.azure.com/org/project → segments = ['org', 'project']
+  // https://dev.azure.com/org/project -> segments = ['org', 'project']
   if (parsed.hostname === 'dev.azure.com') {
     if (segments.length < 2) {
       throw new Error(
@@ -44,7 +44,7 @@ function parseAdoUrl(url) {
     return { orgUrl, project };
   }
 
-  // https://org.visualstudio.com/project → segments = ['project']
+  // https://org.visualstudio.com/project -> segments = ['project']
   if (parsed.hostname.endsWith('.visualstudio.com')) {
     if (segments.length < 1) {
       throw new Error(

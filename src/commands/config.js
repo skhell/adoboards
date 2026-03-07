@@ -96,7 +96,7 @@ export default async function configCommand(opts) {
 
       console.log(chalk.bold('\n  KeePass Setup - you need to create entries manually:\n'));
       console.log(chalk.dim('  1. Open your .kdbx file in KeePassXC'));
-      console.log(chalk.dim('  2. Right-click the root group → New Group → name it "adoboards"'));
+      console.log(chalk.dim('  2. Right-click the root group -> New Group -> name it "adoboards"'));
       console.log(chalk.dim('  3. Inside that group, create these entries:\n'));
       console.log(chalk.dim('     Entry title        Password field contains'));
       console.log(chalk.dim('     ─────────────────  ─────────────────────────────────────'));
@@ -107,12 +107,12 @@ export default async function configCommand(opts) {
       console.log(chalk.dim('\n     You only need ado-pat + your chosen AI provider. Not all four.\n'));
       console.log(chalk.bold('  How to get your Azure DevOps PAT (even with corporate SSO):\n'));
       console.log(chalk.dim('  1. Sign in to Azure DevOps in your browser (SSO handles auth)'));
-      console.log(chalk.dim('  2. Click your profile icon (top right) → "Personal access tokens"'));
+      console.log(chalk.dim('  2. Click your profile icon (top right) -> "Personal access tokens"'));
       console.log(chalk.dim('     Or go to: ') + chalk.cyan.underline(`${orgUrl}/_usersSettings/tokens`));
       console.log(chalk.dim('  3. Click "New Token"'));
       console.log(chalk.dim('     • Name: adoboards'));
       console.log(chalk.dim('     • Expiration: max your org allows (usually 1 year)'));
-      console.log(chalk.dim('     • Scopes: Custom defined → Work Items → Read & Write'));
+      console.log(chalk.dim('     • Scopes: Custom defined -> Work Items -> Read & Write'));
       console.log(chalk.dim('  4. Click "Create" - copy the token immediately (shown only once)'));
       console.log(chalk.dim('  5. In KeePassXC: paste it as the Password of the ado-pat entry\n'));
     }
