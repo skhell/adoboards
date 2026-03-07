@@ -156,7 +156,42 @@ export default async function cloneCommand(url, opts = {}) {
     written++;
   }
 
-  // 5. Write state files
+  // 5. Create iteration folder structure for current year and future only
+  const iterationPaths = flattenTree(iterations);
+  const currentYear = new Date().getFullYear();
+  const areaPaths = workItems.length
+    ? [...new Set(workItems.map((wi) => {
+        const ap = wi.fields['System.AreaPath'] || project;
+        const rel = ap.startsWith(project + '\\')
+          ? ap.slice(project.length + 1).replace(/\\/g, '/')
+          : ap.replace(/\\/g, '/');
+        return rel ? `areas/${rel}` : 'areas';
+      }))]
+    : ['areas'];
+
+  for (const areaDir of areaPaths) {
+    for (const iterPath of iterationPaths) {
+      // Strip project name prefix from iteration path
+      const iterRel = iterPath.startsWith(project + '\\')
+        ? iterPath.slice(project.length + 1).replace(/\\/g, '/')
+        : iterPath.replace(/\\/g, '/');
+      if (!iterRel || iterRel === project) continue;
+
+      // Skip past year iterations - look for year patterns like 2021, Y23, FY25, Q1 2025
+      const yearMatch = iterRel.match(/(?:^|[^0-9])(?:(?:F?Y)(\d{2})|(20\d{2}))(?:[^0-9]|$)/i);
+      if (yearMatch) {
+        const year = yearMatch[2]
+          ? Number(yearMatch[2])
+          : 2000 + Number(yearMatch[1]);
+        if (year < currentYear) continue;
+      }
+
+      const iterDir = join(targetDir, areaDir, 'iterations', iterRel);
+      mkdirSync(iterDir, { recursive: true });
+    }
+  }
+
+  // 6. Write state files
   const cloneConfig = {
     orgUrl,
     project,

@@ -133,7 +133,9 @@ export async function getAllWorkItems(orgUrl, project, { area, since, states, as
     wiql += ` AND [System.AreaPath] UNDER '${safeArea}'`;
   }
   if (since) {
-    wiql += ` AND [System.ChangedDate] >= '${since}'`;
+    // WIQL only accepts date (YYYY-MM-DD), not full ISO timestamps
+    const dateOnly = since.split('T')[0];
+    wiql += ` AND [System.ChangedDate] >= '${dateOnly}'`;
   }
   if (states?.length) {
     const stateList = states.map((s) => `'${s.replace(/'/g, "''")}'`).join(', ');

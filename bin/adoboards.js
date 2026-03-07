@@ -30,4 +30,36 @@ program
     await cloneCommand(url, opts);
   });
 
+program
+  .command('status')
+  .description('Show modified, staged, new, and deleted work items')
+  .action(async () => {
+    const { default: statusCommand } = await import('../src/commands/status.js');
+    statusCommand();
+  });
+
+program
+  .command('add <files...>')
+  .description('Stage files for push (supports individual files, directories, or . for all)')
+  .action(async (files) => {
+    const { default: addCommand } = await import('../src/commands/add.js');
+    addCommand(files);
+  });
+
+program
+  .command('push [file]')
+  .description('Push staged work items to Azure DevOps (or push a single file directly)')
+  .action(async (file) => {
+    const { default: pushCommand } = await import('../src/commands/push.js');
+    await pushCommand(file);
+  });
+
+program
+  .command('pull')
+  .description('Pull remote changes from Azure DevOps since last sync')
+  .action(async () => {
+    const { default: pullCommand } = await import('../src/commands/pull.js');
+    await pullCommand();
+  });
+
 program.parse();
