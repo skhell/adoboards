@@ -1,4 +1,4 @@
-## NPM CLI for Azure DevOps Boards<!-- omit in toc -->
+## NPM CLI for Azure DevOps Boards with AI support<!-- omit in toc -->
 
 ![adoboards](.github/media/homer.gif)
 
