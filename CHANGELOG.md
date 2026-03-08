@@ -7,15 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-03-08
+
 ### Added
 
+- **`adoboards gen <idea>`** - Generate work items from an idea using AI
+  - Types: hierarchy (epic+features+stories), epic, feature, story
+  - `--parent`, `--area`, `--dir`, `--provider` flags
+  - Parses AI response into individual markdown files with frontmatter
+- **`adoboards optimize [path]`** - AI-optimize work item content
+  - Preview mode (default) shows diff, `--apply` writes changes
+  - Improves descriptions, acceptance criteria - never modifies frontmatter
+- **`adoboards plan`** - AI-powered sprint planning
+  - Collects unassigned stories, distributes across sprints by capacity
+  - Shows capacity bar per sprint, `--apply` writes iteration to files
+- **`src/api/ai.js`** - AI provider abstraction with prompt templating
+  - Anthropic (Claude), OpenAI (GPT-4o), Google (Gemini), Azure OpenAI providers
+  - `{{variable}}` interpolation in prompt templates
+- **Azure OpenAI provider** - Corporate-compliant AI via your company's Azure subscription
+  - Uses Azure-specific API format with endpoint, deployment name, and api-version
+  - API key stored in KeePass as `adoboards/azure-openai-key` or env var `ADOBOARDS_AZURE_OPENAI_KEY`
+  - Config wizard prompts for endpoint and deployment name
+  - Use with `--provider azure-openai` or set as default in config
+- **AI Persona config** - Configurable role and team context for AI prompts
+  - Config wizard prompts for role/title and team description
+  - AI adapts tone and domain language to your job (not hardcoded)
+  - Defaults to "engineer" / "software development" if not set
 - **`adoboards new <type>`** - Create work items from templates without AI
   - Supports: epic, feature, story, bug, task
-  - `--title`, `--area`, `--iteration`, `--parent`, `--dir` flags
-  - Auto-populates area from clone config if available
-  - Bug and task reuse the story template with corrected type
+  - `--title`, `--area`, `--iteration`, `--parent`, `--assignee`, `--dir` flags
+  - Auto-populates area and assignee from clone config
+  - Dedicated templates per type with inline comments
   - File naming: `PREFIX-pending-slug.md` (e.g. `STORY-pending-deploy-dns.md`)
-  - Workflow: `new` -> edit -> `add` -> `push`
 
 ### Changed
 
@@ -41,6 +64,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **All commands** - Now work from any subdirectory inside the project (walks up to find `.adoboards/`, like git)
+- **`adoboards status`** - No longer shows false untracked/deleted items after clone
+  - Only scans `areas/` directory (where work items live), skips templates/ and root .md files
+  - Files without `id: pending` in non-tracked paths are silently ignored
+- **`adoboards add`** - Rejects files with errors instead of staging them
+  - Shows clear error + fix instructions per file (missing type, id, title, etc.)
+  - Only valid work items are staged
 - **`adoboards clone`** - Improved year-filtering regex for iteration folders
   - Now catches patterns like `Q1 2025`, `Y21-A1`, `FY25`, and year with space/dash boundaries
   - Previous regex only matched years bounded by path separators, missing common ADO iteration naming patterns

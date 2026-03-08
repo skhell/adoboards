@@ -15,7 +15,7 @@ After nearly 20 years in the industry, I noticed something: the time spent writi
 You can quickly:
 1. Work from CLI with git-like commands (`clone`, `push`, `pull`, `status`, `diff`, `add`)
 2. Create work items from templates manually - no AI required, no corporate restrictions
-3. **Optionally** generate Epics, Features, and User Stories with **Claude**, **ChatGPT**, or **Gemini** - API keys safely stored in KeePass
+3. **Optionally** generate Epics, Features, and User Stories with **Claude**, **ChatGPT**, **Gemini**, or **Azure OpenAI** - API keys safely stored in KeePass (recommended)
 4. Let AI **optimize** existing items so you stop guessing _"what do I pick for t-shirt size or business value?"_
 5. **Plan** entire sprints with AI-powered capacity distribution
 6. Generate **sprint reports** from local state in seconds - ready to paste into emails or meetings
@@ -33,6 +33,7 @@ Less time writing about work, more time doing the work.
   - [Secrets](#secrets)
 - [Commands](#commands)
   - [Clone your boards locally](#clone-your-boards-locally)
+  - [Create new work items (no AI needed)](#create-new-work-items-no-ai-needed)
   - [Check what changed](#check-what-changed)
   - [Stage and push changes to ADO](#stage-and-push-changes-to-ado)
   - [Pull remote changes](#pull-remote-changes)
@@ -51,7 +52,7 @@ Less time writing about work, more time doing the work.
 - **Node.js 18+** (ESM modules)
 - **KeePassXC** (recommended) with `keepassxc-cli` configured on your `PATH` for secrets management
 - An **Azure DevOps** organization with Boards enabled
-- **Optional:** an AI provider API key (Anthropic, OpenAI, or Google Gemini) for content generation features
+- **Optional:** an AI provider API key (Anthropic, OpenAI, Google Gemini, or Azure OpenAI for business/corporate compliant environments) for content generation features
 
 ### Install from npm
 
@@ -86,7 +87,8 @@ It will ask for:
 3. **Secrets backend** KeePass (recommended), OS keychain, or local env vars
 4. Path to your **`.kdbx` file** (if using KeePass)
 5. Your preferred **AI provider** (optional - skip if you don't have API access)
-6. **Team capacity** team size, velocity per person, sprint length
+6. **AI persona** describe your role/title and what your team does - will be used by AI promt to write in your domain language
+7. **Team capacity** team size, velocity per person, sprint length
 
 Or skip the wizard and set the secrets backend directly:
 
@@ -196,8 +198,9 @@ If KeePassXC desktop is already open and unlocked, the secret service socket kic
 | `anthropic-key` | Anthropic Claude API key |
 | `openai-key` | OpenAI ChatGPT API key |
 | `gemini-key` | Google Gemini API key |
+| `azure-openai-key` | Azure OpenAI Service API key |
 
-You only need `ado-pat` to use the CLI. AI provider keys are optional - add one only if you want `gen`, `optimize`, or `plan` features. Not all four.
+You only need `ado-pat` to use the CLI. AI provider keys are optional - add one only if you want `gen`, `optimize`, or `plan` features.
 
 #### How to get your Azure DevOps PAT (even with corporate SSO)
 If your org uses single sign-on (SAML, Entra ID, ADFS, etc.) you can still create a PAT SSO handles the browser login, and the PAT is generated _after_ you're authenticated.
@@ -225,8 +228,29 @@ If your org uses single sign-on (SAML, Entra ID, ADFS, etc.) you can still creat
 | **Anthropic (Claude)** | [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys) -> Create Key |
 | **OpenAI (ChatGPT)** | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) -> Create new secret key |
 | **Google (Gemini)** | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) -> Create API key |
+| **Azure OpenAI** | Azure Portal -> your OpenAI resource -> Keys and Endpoint |
 
 Copy the key -> paste it as the **Password** of the matching KeePass entry (e.g. `adoboards/anthropic-key`).
+
+#### Azure OpenAI Service (corporate compliance)
+
+If your organization provides Azure OpenAI Service, you can use it instead of a personal API key. This keeps everything on your company's Azure subscription - fully compliant, no personal spend.
+
+1. Run `adoboards config` and select `azure-openai` as AI provider
+2. Enter your Azure OpenAI **endpoint** (e.g. `https://your-resource.openai.azure.com`)
+3. Enter your **deployment name** (the model you deployed, e.g. `gpt-4o`)
+4. Get your API key from Azure Portal -> your OpenAI resource -> **Keys and Endpoint** -> copy Key 1
+5. Store the key:
+   - KeePass: create entry `adoboards/azure-openai-key` with the key as Password
+   - Env vars: `export ADOBOARDS_AZURE_OPENAI_KEY="your-key"`
+
+Then use it:
+
+```bash
+adoboards gen "Migrate DNS to Azure" --provider azure-openai
+```
+
+Or set it as default in `adoboards config` and skip `--provider` entirely.
 
 #### Switching backends
 
@@ -255,6 +279,7 @@ export ADOBOARDS_ADO_PAT="your-pat-here"
 export ADOBOARDS_ANTHROPIC_KEY="sk-ant-..."    # if using Claude
 export ADOBOARDS_OPENAI_KEY="sk-..."           # if using ChatGPT
 export ADOBOARDS_GEMINI_KEY="AI..."            # if using Gemini
+export ADOBOARDS_AZURE_OPENAI_KEY="..."        # if using Azure OpenAI in your business/enterprise environment
 
 # Option B: use the .env template
 cp .env.example .env
@@ -416,6 +441,8 @@ No API calls works entirely from your local files. Ready to paste into email or 
 
 This is where the magic happens. Stop staring at empty fields with just a title and let AI fill them in.
 
+AI adapts to your role and domain. During `adoboards config`, set your **role** (e.g. "Senior Solution Architect") and **team context** (e.g. "Infrastructure and cloud platform, Azure/AWS"). The AI uses this to write in your language - not generic consumer speak.
+
 ### Generate work items from an idea
 
 ```bash
@@ -437,6 +464,7 @@ Pick your AI provider per command if you want:
 ```bash
 adoboards gen "..." --provider openai
 adoboards gen "..." --provider gemini
+adoboards gen "..." --provider azure-openai
 ```
 
 ### Optimize existing work items
