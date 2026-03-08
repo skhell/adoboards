@@ -2,10 +2,31 @@
   "name": "adoboards",
   "version": "0.2.0",
   "description": "Git-like CLI for Azure DevOps Boards with AI generation",
+  "keywords": [
+    "azure-devops",
+    "ado",
+    "boards",
+    "work-items",
+    "cli",
+    "scrum",
+    "agile",
+    "sprint",
+    "ai",
+    "markdown",
+    "devops"
+  ],
   "type": "module",
   "bin": {
     "adoboards": "./bin/adoboards.js"
   },
+  "files": [
+    "bin/",
+    "src/",
+    "templates/",
+    ".env.example",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=18.0.0"
   },
