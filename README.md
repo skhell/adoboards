@@ -1,6 +1,6 @@
 ## NPM CLI for Azure DevOps Boards with AI support<!-- omit in toc -->
 
-![adoboards](.github/media/homer.gif)
+![adoboards](https://raw.githubusercontent.com/skhell/adoboards/main/.github/media/homer.gif)
 
 _If you feel like **Homer Simpson backing into bushes** right before sprint review, you are in the right place._
 
