@@ -12,6 +12,7 @@ const config = new Conf({
     azureOpenaiEndpoint: { type: 'string' },
     azureOpenaiDeployment: { type: 'string' },
     azureOpenaiApiVersion: { type: 'string' },
+    reportsDir: { type: 'string' },
     userRole: { type: 'string' },
     userContext: { type: 'string' },
     teamSize: { type: 'number' },

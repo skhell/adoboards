@@ -7,7 +7,7 @@ const program = new Command();
 program
   .name('adoboards')
   .description('Git-like CLI for Azure DevOps Boards with AI generation')
-  .version('0.2.1');
+  .version('0.3.0');
 
 program
   .command('config')
@@ -109,6 +109,23 @@ program
   .action(async (opts) => {
     const { default: planCommand } = await import('../src/commands/plan.js');
     await planCommand(opts);
+  });
+
+program
+  .command('report')
+  .description('Generate sprint summary from local files (no API calls)')
+  .option('--sprint <name>', 'Sprint name or number (default: overview of all sprints)')
+  .action(async (opts) => {
+    const { default: reportCommand } = await import('../src/commands/report.js');
+    reportCommand(opts);
+  });
+
+program
+  .command('diff [file]')
+  .description('Field-level diff between local files and last known remote state')
+  .action(async (file) => {
+    const { default: diffCommand } = await import('../src/commands/diff.js');
+    diffCommand(file);
   });
 
 program.parse();

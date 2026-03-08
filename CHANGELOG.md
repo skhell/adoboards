@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-08
+
+### Added
+
+- **`adoboards report`** - Offline sprint summary from local files
+  - Auto-detects current sprint (most Active items) or use `--sprint <name|number>`
+  - Shows progress bar, points breakdown by state, items per state
+  - Flags items without story points or assignee
+  - Overview mode shows all sprints with progress bars when no sprint specified
+  - No API calls - works fully offline
+- **`adoboards diff [file]`** - Field-level diff vs last known remote state
+  - Compares frontmatter fields and body sections against refs.json snapshot
+  - Shows red (remote) / green (local) for changed fields
+  - Single file or all modified files
+  - Handles description, acceptance criteria, repro steps, system info
+  - New items (id: pending) show helpful message instead of error
+
 ## [0.2.0] - 2026-03-08
 
 ### Added

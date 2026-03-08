@@ -89,6 +89,7 @@ It will ask for:
 5. Your preferred **AI provider** (optional - skip if you don't have API access)
 6. **AI persona** describe your role/title and what your team does - will be used by AI promt to write in your domain language
 7. **Team capacity** team size, velocity per person, sprint length
+8. **Reports directory** where sprint reports are saved (default: `./reports/`)
 
 Or skip the wizard and set the secrets backend directly:
 
@@ -407,8 +408,11 @@ Area is auto-populated from your clone config if `--area` is not provided.
 
 ```bash
 adoboards status          # What's modified, new, or deleted locally
-adoboards diff            # Field-level diff against last known remote state
+adoboards diff            # Field-level diff of all modified files vs remote
+adoboards diff story.md   # Diff a single file
 ```
+
+`diff` compares your local frontmatter and body sections against the last known remote state (stored in refs.json). Shows red for remote values and green for local changes - per field, not per line.
 
 ### Stage and push changes to ADO
 
@@ -429,11 +433,16 @@ adoboards pull            # Sync remote changes to local files
 ### Generate sprint reports (offline)
 
 ```bash
-adoboards report                  # Current sprint summary
-adoboards report --sprint 4       # Specific sprint
+adoboards report                    # Overview of all sprints with progress bars
+adoboards report --sprint 4         # Detailed report for a specific sprint
+adoboards report --sprint Sprint-4  # Or by name
 ```
 
-No API calls works entirely from your local files. Ready to paste into email or Teams.
+Without `--sprint`, you get a global overview - all sprints listed with progress bars, points, and item counts. With `--sprint`, you get the detailed breakdown: items grouped by state, assignees, and attention flags for missing story points or assignees.
+
+No API calls - works entirely from your local files.
+
+Reports are saved as markdown files to your configured reports directory (default: `./reports/`). Set it during `adoboards config` or just let it default. File names include the date: `2026-03-08-sprint-4.md`. Ready to paste into email, Teams, or attach to a ceremony invite.
 
 ---
 

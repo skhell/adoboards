@@ -204,6 +204,14 @@ export default async function configCommand(opts) {
     const sprintDays = await ask(rl, 'Sprint length (days)', String(config.get('sprintLengthDays') || '14'));
     if (sprintDays) config.set('sprintLengthDays', Number(sprintDays));
 
+    // 9. Reports directory (optional)
+    console.log(chalk.bold('\nReports Directory (optional)'));
+    console.log(chalk.dim('  Where sprint reports are saved when you run "adoboards report".'));
+    console.log(chalk.dim('  Can be absolute (e.g. ~/Documents/reports) or relative to project root.'));
+    console.log(chalk.dim('  Default: ./reports in your project root.\n'));
+    const reportsDir = await ask(rl, 'Reports output directory', config.get('reportsDir') || 'reports');
+    if (reportsDir) config.set('reportsDir', reportsDir);
+
     // Summary
     console.log(chalk.bold('\nConfiguration saved:'));
     console.log(`  Org:       ${chalk.cyan(config.get('orgUrl'))}`);
@@ -215,6 +223,7 @@ export default async function configCommand(opts) {
     if (config.get('teamSize')) {
       console.log(`  Team:      ${chalk.cyan(config.get('teamSize'))} people, ${chalk.cyan(config.get('velocityPerPerson'))} pts/person, ${chalk.cyan(config.get('sprintLengthDays'))}-day sprints`);
     }
+    if (config.get('reportsDir')) console.log(`  Reports:   ${chalk.cyan(config.get('reportsDir'))}`);
     console.log(chalk.dim(`\n  Config stored at: ${config.path}\n`));
   } finally {
     rl.close();
