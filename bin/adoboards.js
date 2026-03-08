@@ -7,7 +7,7 @@ const program = new Command();
 program
   .name('adoboards')
   .description('Git-like CLI for Azure DevOps Boards with AI generation')
-  .version('0.1.0');
+  .version('0.2.0');
 
 program
   .command('config')
@@ -74,6 +74,41 @@ program
   .action(async () => {
     const { default: pullCommand } = await import('../src/commands/pull.js');
     await pullCommand();
+  });
+
+program
+  .command('gen <idea>')
+  .description('Generate work items from an idea using AI')
+  .option('--type <type>', 'Generation type: hierarchy, epic, feature, story (default: hierarchy)')
+  .option('--parent <id>', 'Parent work item ID (required for feature and story)')
+  .option('--area <path>', 'Override area path')
+  .option('--dir <path>', 'Output directory (default: current directory)')
+  .option('--provider <name>', 'AI provider: anthropic, openai, gemini, azure-openai')
+  .action(async (idea, opts) => {
+    const { default: genCommand } = await import('../src/commands/gen.js');
+    await genCommand(idea, opts);
+  });
+
+program
+  .command('optimize [path]')
+  .description('AI-optimize work item content (descriptions, acceptance criteria)')
+  .option('--apply', 'Write changes to files (default: preview only)')
+  .option('--provider <name>', 'AI provider: anthropic, openai, gemini, azure-openai')
+  .action(async (path, opts) => {
+    const { default: optimizeCommand } = await import('../src/commands/optimize.js');
+    await optimizeCommand(path, opts);
+  });
+
+program
+  .command('plan')
+  .description('AI-powered sprint planning - distribute unassigned stories across sprints')
+  .option('--apply', 'Apply sprint assignments to files')
+  .option('--team-size <n>', 'Override team size')
+  .option('--velocity <n>', 'Override velocity per person per sprint')
+  .option('--provider <name>', 'AI provider: anthropic, openai, gemini, azure-openai')
+  .action(async (opts) => {
+    const { default: planCommand } = await import('../src/commands/plan.js');
+    await planCommand(opts);
   });
 
 program.parse();

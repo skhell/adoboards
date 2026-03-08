@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import chalk from 'chalk';
-import { readConfig } from '../core/state.js';
+import { readConfig, findProjectRoot } from '../core/state.js';
 
 const VALID_TYPES = ['epic', 'feature', 'story', 'bug', 'task'];
 
@@ -14,11 +14,13 @@ function slugify(text) {
 }
 
 export default function newCommand(type, opts = {}) {
-  const config = readConfig('.');
-  if (!config) {
+  const root = findProjectRoot('.');
+  if (!root) {
     console.error(chalk.red('Not an adoboards project. Run adoboards clone first.'));
     process.exit(1);
   }
+
+  const config = readConfig(root);
 
   const typeLower = type.toLowerCase();
   if (!VALID_TYPES.includes(typeLower)) {
@@ -26,12 +28,12 @@ export default function newCommand(type, opts = {}) {
     process.exit(1);
   }
 
-  // Load template
+  // Load template - check project templates/ first, then package templates/
   const templateName = typeLower;
   const globalTemplateDir = new URL('../../templates', import.meta.url).pathname;
+  const localTemplatePath = join(root, 'templates', `${templateName}.md`);
 
   let templatePath;
-  const localTemplatePath = join('.', 'templates', `${templateName}.md`);
   if (existsSync(localTemplatePath)) {
     templatePath = localTemplatePath;
   } else if (existsSync(join(globalTemplateDir, `${templateName}.md`))) {

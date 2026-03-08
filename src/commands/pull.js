@@ -1,21 +1,20 @@
-import { writeFileSync, existsSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { mkdirSync } from 'node:fs';
+import { writeFileSync, existsSync, readFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import chalk from 'chalk';
-import * as ado from '../api/ado.js';
-import { readConfig, writeConfig, readRefs, writeRefs } from '../core/state.js';
-import { adoToMarkdown, workItemFileName, workItemDirPath, buildParentMap } from '../core/mapper.js';
 import matter from 'gray-matter';
-import { readFileSync } from 'node:fs';
+import * as ado from '../api/ado.js';
+import { readConfig, writeConfig, readRefs, writeRefs, findProjectRoot } from '../core/state.js';
+import { adoToMarkdown, workItemFileName, workItemDirPath, buildParentMap } from '../core/mapper.js';
 
 export default async function pullCommand() {
-  const config = readConfig('.');
-  if (!config) {
+  const root = findProjectRoot('.');
+  if (!root) {
     console.error(chalk.red('Not an adoboards project. Run adoboards clone first.'));
     process.exit(1);
   }
 
-  const refs = readRefs('.');
+  const config = readConfig(root);
+  const refs = readRefs(root);
   const lastSync = config.lastSync;
 
   console.log(chalk.bold(`\n  Pulling changes from ${config.project}...\n`));
@@ -37,7 +36,7 @@ export default async function pullCommand() {
   if (!workItems.length) {
     console.log(chalk.dim('\n  No changes since last sync.\n'));
     config.lastSync = new Date().toISOString();
-    writeConfig('.', config);
+    writeConfig(root, config);
     return;
   }
 
@@ -51,9 +50,9 @@ export default async function pullCommand() {
     const id = wi.id;
     const ref = refs[id];
 
-    if (ref && existsSync(ref.path)) {
+    if (ref && existsSync(join(root, ref.path))) {
       // Existing item - check for local modifications before overwriting
-      const localContent = readFileSync(ref.path, 'utf-8');
+      const localContent = readFileSync(join(root, ref.path), 'utf-8');
       const { data: localFm } = matter(localContent);
 
       const hasLocalEdits = localFm.title !== ref.fields['System.Title'] ||
@@ -66,7 +65,7 @@ export default async function pullCommand() {
         // Write remote version with .remote suffix so user can diff
         const remotePath = ref.path.replace(/\.md$/, '.remote.md');
         const markdown = adoToMarkdown(wi);
-        writeFileSync(remotePath, markdown, 'utf-8');
+        writeFileSync(join(root, remotePath), markdown, 'utf-8');
         console.log(chalk.yellow(`    Remote version saved as: ${remotePath}`));
         conflicts++;
         continue;
@@ -75,7 +74,7 @@ export default async function pullCommand() {
       if (hasRemoteChanges) {
         // Overwrite local with remote
         const markdown = adoToMarkdown(wi);
-        writeFileSync(ref.path, markdown, 'utf-8');
+        writeFileSync(join(root, ref.path), markdown, 'utf-8');
         refs[id] = { path: ref.path, rev: wi.rev, fields: wi.fields };
         updatedCount++;
       }
@@ -87,16 +86,16 @@ export default async function pullCommand() {
 
       let filePath;
       if (type === 'Epic' || type === 'Feature') {
-        const itemDir = `${dirPath}/${name}`;
-        mkdirSync(itemDir, { recursive: true });
-        filePath = `${itemDir}/${type.toLowerCase()}.md`;
+        const itemDir = join(dirPath, name);
+        mkdirSync(join(root, itemDir), { recursive: true });
+        filePath = join(itemDir, `${type.toLowerCase()}.md`);
       } else {
-        mkdirSync(dirPath, { recursive: true });
-        filePath = `${dirPath}/${name}.md`;
+        mkdirSync(join(root, dirPath), { recursive: true });
+        filePath = join(dirPath, `${name}.md`);
       }
 
       const markdown = adoToMarkdown(wi);
-      writeFileSync(filePath, markdown, 'utf-8');
+      writeFileSync(join(root, filePath), markdown, 'utf-8');
       refs[id] = { path: filePath, rev: wi.rev, fields: wi.fields };
       newCount++;
     }
@@ -104,8 +103,8 @@ export default async function pullCommand() {
 
   // Update state
   config.lastSync = new Date().toISOString();
-  writeConfig('.', config);
-  writeRefs('.', refs);
+  writeConfig(root, config);
+  writeRefs(root, refs);
 
   // Summary
   console.log(chalk.bold('\n  Pull complete:'));

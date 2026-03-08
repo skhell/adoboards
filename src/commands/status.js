@@ -1,20 +1,20 @@
-import { readdirSync, statSync } from 'node:fs';
+import { readdirSync, statSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import chalk from 'chalk';
 import Table from 'cli-table3';
 import matter from 'gray-matter';
-import { readFileSync } from 'node:fs';
-import { readRefs, readStaged, readConfig } from '../core/state.js';
+import { readRefs, readStaged, readConfig, findProjectRoot } from '../core/state.js';
 
 export default function statusCommand() {
-  const config = readConfig('.');
-  if (!config) {
+  const root = findProjectRoot('.');
+  if (!root) {
     console.error(chalk.red('Not an adoboards project. Run adoboards clone first.'));
     process.exit(1);
   }
 
-  const refs = readRefs('.');
-  const staged = new Set(readStaged('.'));
+  const config = readConfig(root);
+  const refs = readRefs(root);
+  const staged = new Set(readStaged(root));
 
   // Build reverse map: path -> id
   const pathToId = {};
@@ -22,8 +22,8 @@ export default function statusCommand() {
     pathToId[ref.path] = Number(id);
   }
 
-  // Find all .md files in the project (excluding .adoboards/)
-  const mdFiles = findMarkdownFiles('.', '.');
+  // Find all work item .md files from project root
+  const mdFiles = findWorkItemFiles(root);
   const trackedPaths = new Set(Object.values(refs).map((r) => r.path));
 
   const modified = [];
@@ -37,22 +37,21 @@ export default function statusCommand() {
     if (id == null) {
       // Not in refs - check if it has frontmatter with id: pending
       try {
-        const content = readFileSync(filePath, 'utf-8');
+        const content = readFileSync(join(root, filePath), 'utf-8');
         const { data } = matter(content);
         if (data.id === 'pending') {
           pending.push(filePath);
-        } else {
-          untracked.push(filePath);
         }
+        // Files without id: pending are not work items - skip silently
       } catch {
-        untracked.push(filePath);
+        // Skip unreadable files
       }
       continue;
     }
 
     // Check if modified by comparing frontmatter fields
     try {
-      const content = readFileSync(filePath, 'utf-8');
+      const content = readFileSync(join(root, filePath), 'utf-8');
       const { data } = matter(content);
       const ref = refs[id];
       const refFields = ref.fields;
@@ -67,8 +66,9 @@ export default function statusCommand() {
 
   // Check for deleted (in refs but file gone)
   const deleted = [];
+  const mdFilesSet = new Set(mdFiles);
   for (const [id, ref] of Object.entries(refs)) {
-    if (!mdFiles.includes(ref.path)) {
+    if (!mdFilesSet.has(ref.path)) {
       deleted.push({ path: ref.path, id: Number(id) });
     }
   }
@@ -97,9 +97,6 @@ export default function statusCommand() {
   for (const d of deleted) {
     rows.push([chalk.red('deleted'), chalk.red(d.path), chalk.red(d.id)]);
   }
-  for (const u of untracked) {
-    rows.push([chalk.dim('untracked'), chalk.dim(u), chalk.dim('-')]);
-  }
 
   if (!rows.length) {
     console.log(chalk.dim('  Nothing changed.\n'));
@@ -123,7 +120,6 @@ export default function statusCommand() {
 }
 
 function hasChanges(frontmatter, rawContent, refFields) {
-  // Frontmatter changes
   if (frontmatter.title !== refFields['System.Title']) return true;
   if (frontmatter.state !== refFields['System.State']) return true;
   if (frontmatter.area !== refFields['System.AreaPath']) return true;
@@ -133,7 +129,7 @@ function hasChanges(frontmatter, rawContent, refFields) {
   const refBv = refFields['Microsoft.VSTS.Common.BusinessValue'];
   if (frontmatter.businessValue != null && frontmatter.businessValue !== refBv) return true;
 
-  // Body changes (description, acceptance criteria)
+  // Body changes
   const { content: body } = matter(rawContent);
   const sections = parseSections(body);
   const refDesc = htmlToPlainText(refFields['System.Description'] || '');
@@ -158,6 +154,10 @@ function parseSections(body) {
       result.description = content === '_No description_' ? '' : content;
     } else if (heading === 'acceptance criteria') {
       result.acceptanceCriteria = content;
+    } else if (heading === 'repro steps') {
+      result.reproSteps = content === '_No repro steps_' ? '' : content;
+    } else if (heading === 'system info') {
+      result.systemInfo = content;
     }
   }
   return result;
@@ -183,7 +183,18 @@ function htmlToPlainText(html) {
     .trim();
 }
 
-function findMarkdownFiles(dir, basePath) {
+/**
+ * Find work item markdown files from project root.
+ * Only scans areas/ directory (where work items live).
+ * Skips templates/, .adoboards/, node_modules/, .git/.
+ * Returns paths relative to root.
+ */
+function findWorkItemFiles(root) {
+  const areasDir = join(root, 'areas');
+  return findMdRecursive(areasDir, root);
+}
+
+function findMdRecursive(dir, root) {
   const results = [];
   let entries;
   try {
@@ -193,13 +204,12 @@ function findMarkdownFiles(dir, basePath) {
   }
 
   for (const entry of entries) {
-    if (entry === '.adoboards' || entry === 'node_modules' || entry === '.git') continue;
     const fullPath = join(dir, entry);
     const stat = statSync(fullPath);
     if (stat.isDirectory()) {
-      results.push(...findMarkdownFiles(fullPath, basePath));
-    } else if (entry.endsWith('.md')) {
-      results.push(relative(basePath, fullPath));
+      results.push(...findMdRecursive(fullPath, root));
+    } else if (entry.endsWith('.md') && !entry.endsWith('.remote.md')) {
+      results.push(relative(root, fullPath));
     }
   }
   return results;

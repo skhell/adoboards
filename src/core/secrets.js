@@ -6,6 +6,7 @@ const ENV_MAP = {
   'anthropic-key': 'ADOBOARDS_ANTHROPIC_KEY',
   'openai-key': 'ADOBOARDS_OPENAI_KEY',
   'gemini-key': 'ADOBOARDS_GEMINI_KEY',
+  'azure-openai-key': 'ADOBOARDS_AZURE_OPENAI_KEY',
 };
 
 // Cache the master password for the duration of the process

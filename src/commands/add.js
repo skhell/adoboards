@@ -2,86 +2,107 @@ import { existsSync, readdirSync, statSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import chalk from 'chalk';
 import matter from 'gray-matter';
-import { readStaged, writeStaged, readConfig } from '../core/state.js';
+import { readStaged, writeStaged, findProjectRoot } from '../core/state.js';
 
 export default function addCommand(files) {
-  const config = readConfig('.');
-  if (!config) {
+  const root = findProjectRoot('.');
+  if (!root) {
     console.error(chalk.red('Not an adoboards project. Run adoboards clone first.'));
     process.exit(1);
   }
 
-  const staged = new Set(readStaged('.'));
-  let added = 0;
+  const staged = new Set(readStaged(root));
+  const toAdd = [];
+  const errors = [];
 
   for (const file of files) {
     if (file === '.') {
-      // Stage all .md files
-      const mdFiles = findMarkdownFiles('.', '.');
-      for (const f of mdFiles) {
-        if (!staged.has(f)) {
-          staged.add(f);
-          added++;
-        }
-      }
+      // Stage all work item .md files from areas/
+      const areasDir = join(root, 'areas');
+      const mdFiles = findMdRecursive(areasDir, root);
+      for (const f of mdFiles) toAdd.push(f);
     } else {
-      const resolved = relative('.', resolve(file));
-      if (!existsSync(resolved)) {
-        console.error(chalk.red(`  File not found: ${file}`));
+      // Resolve path relative to project root
+      const absPath = resolve(file);
+      const relPath = relative(root, absPath);
+
+      if (!existsSync(absPath)) {
+        errors.push({ path: file, issue: 'file not found' });
         continue;
       }
 
-      const stat = statSync(resolved);
+      const stat = statSync(absPath);
       if (stat.isDirectory()) {
-        const mdFiles = findMarkdownFiles(resolved, '.');
-        for (const f of mdFiles) {
-          if (!staged.has(f)) {
-            staged.add(f);
-            added++;
-          }
-        }
-      } else if (resolved.endsWith('.md') && !resolved.endsWith('.remote.md')) {
-        if (!staged.has(resolved)) {
-          staged.add(resolved);
-          added++;
-        }
+        const mdFiles = findMdRecursive(absPath, root);
+        for (const f of mdFiles) toAdd.push(f);
+      } else if (relPath.endsWith('.md') && !relPath.endsWith('.remote.md')) {
+        toAdd.push(relPath);
       }
     }
   }
 
-  // Validate staged files and warn about issues early
-  const warnings = [];
+  // Validate each file before staging
   const validTypes = ['Epic', 'Feature', 'Story', 'Bug', 'Task', 'Issue'];
+  const validToStage = [];
 
-  for (const filePath of staged) {
+  for (const filePath of toAdd) {
+    if (staged.has(filePath)) continue; // already staged
+
+    const absPath = join(root, filePath);
     try {
-      const content = readFileSync(filePath, 'utf-8');
+      const content = readFileSync(absPath, 'utf-8');
       const { data } = matter(content);
 
       if (!data.type) {
-        warnings.push({ path: filePath, issue: 'missing type — not a work item, will be skipped on push' });
-      } else if (!validTypes.includes(data.type)) {
-        warnings.push({ path: filePath, issue: `unknown type "${data.type}" — use: ${validTypes.join(', ')}` });
-      } else if (data.id == null) {
-        warnings.push({ path: filePath, issue: 'missing id — set to "pending" for new items' });
-      } else if (!data.title) {
-        warnings.push({ path: filePath, issue: 'missing title — fill in before push' });
+        errors.push({ path: filePath, issue: 'missing type in frontmatter', fix: 'add type: Story (or Epic, Feature, Bug, Task)' });
+        continue;
       }
+      if (!validTypes.includes(data.type)) {
+        errors.push({ path: filePath, issue: `unknown type "${data.type}"`, fix: `use one of: ${validTypes.join(', ')}` });
+        continue;
+      }
+      if (data.id == null) {
+        errors.push({ path: filePath, issue: 'missing id in frontmatter', fix: 'add id: pending (for new items)' });
+        continue;
+      }
+      if (!data.title || !String(data.title).trim()) {
+        errors.push({ path: filePath, issue: 'empty title', fix: 'fill in the title field' });
+        continue;
+      }
+
+      validToStage.push(filePath);
     } catch {
-      warnings.push({ path: filePath, issue: 'cannot parse frontmatter' });
+      errors.push({ path: filePath, issue: 'cannot parse frontmatter', fix: 'check YAML syntax in the --- block' });
     }
   }
 
-  writeStaged('.', [...staged]);
-  console.log(chalk.green(`  ${added} file${added !== 1 ? 's' : ''} staged for push (${staged.size} total)`));
+  // Only stage valid files
+  for (const f of validToStage) {
+    staged.add(f);
+  }
 
-  if (warnings.length) {
-    console.log(chalk.yellow(`\n  Warnings (fix before push):`));
-    for (const w of warnings) console.log(chalk.yellow(`    ${w.path} — ${w.issue}`));
+  writeStaged(root, [...staged]);
+
+  if (validToStage.length) {
+    console.log(chalk.green(`\n  ${validToStage.length} file${validToStage.length !== 1 ? 's' : ''} staged (${staged.size} total)`));
+  }
+
+  if (errors.length) {
+    console.log(chalk.red(`\n  ${errors.length} file${errors.length !== 1 ? 's' : ''} rejected:\n`));
+    for (const e of errors) {
+      console.log(chalk.red(`    ${e.path}`));
+      console.log(chalk.red(`      Error: ${e.issue}`));
+      if (e.fix) console.log(chalk.yellow(`      Fix:   ${e.fix}`));
+      console.log();
+    }
+  }
+
+  if (!validToStage.length && !errors.length) {
+    console.log(chalk.dim('\n  Nothing new to stage.\n'));
   }
 }
 
-function findMarkdownFiles(dir, basePath) {
+function findMdRecursive(dir, root) {
   const results = [];
   let entries;
   try {
@@ -95,9 +116,9 @@ function findMarkdownFiles(dir, basePath) {
     const fullPath = join(dir, entry);
     const stat = statSync(fullPath);
     if (stat.isDirectory()) {
-      results.push(...findMarkdownFiles(fullPath, basePath));
+      results.push(...findMdRecursive(fullPath, root));
     } else if (entry.endsWith('.md') && !entry.endsWith('.remote.md')) {
-      results.push(relative(basePath, fullPath));
+      results.push(relative(root, fullPath));
     }
   }
   return results;

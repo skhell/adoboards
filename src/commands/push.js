@@ -1,26 +1,29 @@
 import { readFileSync, writeFileSync } from 'node:fs';
+import { join, relative, resolve } from 'node:path';
 import chalk from 'chalk';
 import matter from 'gray-matter';
 import * as ado from '../api/ado.js';
-import { readRefs, writeRefs, readStaged, writeStaged, readConfig } from '../core/state.js';
+import { readRefs, writeRefs, readStaged, writeStaged, readConfig, findProjectRoot } from '../core/state.js';
 import { markdownToFields, validateHeadings } from '../core/mapper.js';
 
 export default async function pushCommand(file) {
-  const config = readConfig('.');
-  if (!config) {
+  const root = findProjectRoot('.');
+  if (!root) {
     console.error(chalk.red('Not an adoboards project. Run adoboards clone first.'));
     process.exit(1);
   }
 
-  const refs = readRefs('.');
+  const config = readConfig(root);
+  const refs = readRefs(root);
   let filesToPush;
 
   if (file) {
-    // Push specific file
-    filesToPush = [file];
+    // Push specific file - resolve relative to project root
+    const absPath = resolve(file);
+    filesToPush = [relative(root, absPath)];
   } else {
     // Push all staged files
-    filesToPush = readStaged('.');
+    filesToPush = readStaged(root);
     if (!filesToPush.length) {
       console.log(chalk.yellow('  Nothing staged. Use: adoboards add <file|.>'));
       return;
@@ -40,7 +43,8 @@ export default async function pushCommand(file) {
 
     // Validate frontmatter — must have id and type to be a work item
     try {
-      const content = readFileSync(filePath, 'utf-8');
+      const absPath = join(root, filePath);
+      const content = readFileSync(absPath, 'utf-8');
       const { data } = matter(content);
 
       if (!data.type) {
@@ -100,7 +104,7 @@ export default async function pushCommand(file) {
   // Validate headings before pushing
   const headingWarnings = [];
   for (const filePath of validFiles) {
-    const warnings = validateHeadings(filePath);
+    const warnings = validateHeadings(join(root, filePath));
     for (const w of warnings) {
       headingWarnings.push({ file: filePath, ...w });
     }
@@ -138,7 +142,7 @@ export default async function pushCommand(file) {
 
   for (const filePath of validFiles) {
     try {
-      const parsed = markdownToFields(filePath);
+      const parsed = markdownToFields(join(root, filePath));
       const { id, type, fields, parent } = parsed;
 
       // Map short type names back to ADO types
@@ -155,9 +159,9 @@ export default async function pushCommand(file) {
         const newId = result.id;
 
         // Write back the real ID to the file
-        const content = readFileSync(filePath, 'utf-8');
-        const updated_content = content.replace(/^id:\s*pending$/m, `id: ${newId}`);
-        writeFileSync(filePath, updated_content, 'utf-8');
+        const fileContent = readFileSync(join(root, filePath), 'utf-8');
+        const updated_content = fileContent.replace(/^id:\s*pending$/m, `id: ${newId}`);
+        writeFileSync(join(root, filePath), updated_content, 'utf-8');
 
         // Add parent relation if specified
         if (parent) {
@@ -218,11 +222,11 @@ export default async function pushCommand(file) {
   }
 
   // Save updated refs
-  writeRefs('.', refs);
+  writeRefs(root, refs);
 
   // Clear staged list (only if we pushed from staging)
   if (!file) {
-    writeStaged('.', []);
+    writeStaged(root, []);
   }
 
   // Summary

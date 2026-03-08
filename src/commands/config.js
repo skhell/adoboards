@@ -137,7 +137,7 @@ export default async function configCommand(opts) {
     const aiProvider = await askChoice(
       rl,
       'AI provider',
-      ['none', 'anthropic', 'openai', 'gemini'],
+      ['none', 'anthropic', 'openai', 'gemini', 'azure-openai'],
       config.get('aiProvider') || 'none',
     );
     if (aiProvider === 'none') {
@@ -146,19 +146,51 @@ export default async function configCommand(opts) {
     } else {
       config.set('aiProvider', aiProvider);
 
-      const keyNames = { anthropic: 'anthropic-key', openai: 'openai-key', gemini: 'gemini-key' };
-      const keyUrls = {
-        anthropic: 'https://console.anthropic.com/settings/keys',
-        openai: 'https://platform.openai.com/api-keys',
-        gemini: 'https://aistudio.google.com/apikey',
-      };
-      if (secretsBackend === 'keepass') {
-        console.log(chalk.dim(`  Ensure adoboards/${keyNames[aiProvider]} exists in your KeePass database`));
-        console.log(chalk.dim('  Get your API key here: ') + chalk.cyan.underline(keyUrls[aiProvider]));
+      if (aiProvider === 'azure-openai') {
+        // Azure OpenAI specific config
+        const endpoint = await ask(rl, 'Azure OpenAI endpoint (e.g. https://your-resource.openai.azure.com)', config.get('azureOpenaiEndpoint'));
+        if (endpoint) config.set('azureOpenaiEndpoint', endpoint);
+
+        const deployment = await ask(rl, 'Deployment name (model you deployed)', config.get('azureOpenaiDeployment') || 'gpt-4o');
+        if (deployment) config.set('azureOpenaiDeployment', deployment);
+
+        console.log(chalk.bold('\n  Azure OpenAI Setup:\n'));
+        console.log(chalk.dim('  1. Go to Azure Portal -> your OpenAI resource -> Keys and Endpoint'));
+        console.log(chalk.dim('  2. Copy Key 1 (or Key 2)'));
+        if (secretsBackend === 'keepass') {
+          console.log(chalk.dim('  3. In KeePassXC: create entry adoboards/azure-openai-key'));
+          console.log(chalk.dim('     Paste the key as the Password field'));
+        } else if (secretsBackend === 'env') {
+          console.log(chalk.dim('  3. Set: export ADOBOARDS_AZURE_OPENAI_KEY="your-key"'));
+        }
+        console.log();
+      } else {
+        const keyNames = { anthropic: 'anthropic-key', openai: 'openai-key', gemini: 'gemini-key' };
+        const keyUrls = {
+          anthropic: 'https://console.anthropic.com/settings/keys',
+          openai: 'https://platform.openai.com/api-keys',
+          gemini: 'https://aistudio.google.com/apikey',
+        };
+        if (secretsBackend === 'keepass') {
+          console.log(chalk.dim(`  Ensure adoboards/${keyNames[aiProvider]} exists in your KeePass database`));
+          console.log(chalk.dim('  Get your API key here: ') + chalk.cyan.underline(keyUrls[aiProvider]));
+        }
       }
     }
 
-    // 7. Team capacity (optional - only for plan command)
+    // 7. AI persona (optional - helps AI write in your domain language)
+    console.log(chalk.bold('\nAI Persona (optional)'));
+    console.log(chalk.dim('  Tells the AI who you are so it writes in the right tone and domain language.'));
+    console.log(chalk.dim('  Example role: "Senior Solution Architect"'));
+    console.log(chalk.dim('  Example context: "Infrastructure and cloud platform team, Azure/AWS/on-prem"\n'));
+
+    const userRole = await ask(rl, 'Your role/title', config.get('userRole') || '');
+    if (userRole) config.set('userRole', userRole);
+
+    const userContext = await ask(rl, 'What your team does (short description)', config.get('userContext') || '');
+    if (userContext) config.set('userContext', userContext);
+
+    // 8. Team capacity (optional - only for plan command)
     console.log(chalk.bold('\nTeam Capacity (optional)'));
     console.log(chalk.dim('  Used by the "plan" command to distribute stories across sprints.'));
     console.log(chalk.dim('  It calculates how many story points fit per sprint based on your team.'));
