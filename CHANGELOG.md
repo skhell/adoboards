@@ -37,7 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Now checks all frontmatter fields (title, state, area, iteration, storyPoints, businessValue) and body sections (description, acceptance criteria, repro steps, system info)
   - Previously only checked title and state, which caused silent overwrites of other local edits
 
-## [0.3.0] - 2026-03-08
+## [0.4.0] - 2026-03-08
 
 ### Added
 
