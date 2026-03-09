@@ -7,7 +7,7 @@ const program = new Command();
 program
   .name('adoboards')
   .description('Git-like CLI for Azure DevOps Boards with AI generation')
-  .version('0.3.0');
+  .version('0.3.3');
 
 program
   .command('config')
@@ -22,6 +22,7 @@ program
   .command('clone <url>')
   .description('Clone work items from an Azure DevOps project (e.g. https://dev.azure.com/org/project)')
   .option('--area <path>', 'Clone only items under this area path and all sub-areas beneath it')
+  .option('--iteration <path>', 'Filter iterations to this root path (e.g. "Project\\TeamA")')
   .option('--assignee <users>', 'Filter by assignee: @me, user@company.com, or comma-separated list')
   .option('--since <date>', 'Only items changed since this date (default: Jan 1 of current year)', '')
   .option('--all', 'Include Closed/Removed items and all history (no date, state, or assignee filter)')

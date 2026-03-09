@@ -190,7 +190,31 @@ export default async function configCommand(opts) {
     const userContext = await ask(rl, 'What your team does (short description)', config.get('userContext') || '');
     if (userContext) config.set('userContext', userContext);
 
-    // 8. Team capacity (optional - only for plan command)
+    // 8. Iteration filter (optional - reduce junk from other teams)
+    console.log(chalk.bold('\nIteration Filter (optional)'));
+    console.log(chalk.dim('  If your ADO project has hundreds of iterations from multiple teams,'));
+    console.log(chalk.dim('  set a filter to only sync iterations under your team\'s path.'));
+    console.log(chalk.dim('  Example: "MyProject\\TeamA" will only include iterations starting with that prefix.'));
+    console.log(chalk.dim('  Leave empty to include all iterations.\n'));
+
+    const iterationFilter = await ask(rl, 'Iteration root path', config.get('iterationFilter') || '');
+    if (iterationFilter) {
+      config.set('iterationFilter', iterationFilter);
+    } else {
+      config.delete('iterationFilter');
+    }
+
+    // 9. Folder edits
+    console.log(chalk.bold('\nFolder Protection'));
+    console.log(chalk.dim('  By default, add/push only allow files in folders that match known'));
+    console.log(chalk.dim('  area and iteration paths from ADO. This prevents accidental folder typos.'));
+    console.log(chalk.dim('  Enable folder edits if you need to create custom folders.\n'));
+
+    const currentFolderEdits = config.get('allowFolderEdits') ? 'yes' : 'no';
+    const allowFolderEdits = await askChoice(rl, 'Allow custom folder creation', ['no', 'yes'], currentFolderEdits);
+    config.set('allowFolderEdits', allowFolderEdits === 'yes');
+
+    // 10. Team capacity (optional - only for plan command)
     console.log(chalk.bold('\nTeam Capacity (optional)'));
     console.log(chalk.dim('  Used by the "plan" command to distribute stories across sprints.'));
     console.log(chalk.dim('  It calculates how many story points fit per sprint based on your team.'));
@@ -223,6 +247,8 @@ export default async function configCommand(opts) {
     if (config.get('teamSize')) {
       console.log(`  Team:      ${chalk.cyan(config.get('teamSize'))} people, ${chalk.cyan(config.get('velocityPerPerson'))} pts/person, ${chalk.cyan(config.get('sprintLengthDays'))}-day sprints`);
     }
+    if (config.get('iterationFilter')) console.log(`  Iter. filter: ${chalk.cyan(config.get('iterationFilter'))}`);
+    console.log(`  Folder edits: ${chalk.cyan(config.get('allowFolderEdits') ? 'allowed' : 'protected')}`);
     if (config.get('reportsDir')) console.log(`  Reports:   ${chalk.cyan(config.get('reportsDir'))}`);
     console.log(chalk.dim(`\n  Config stored at: ${config.path}\n`));
   } finally {

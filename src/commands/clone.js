@@ -2,7 +2,8 @@ import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import chalk from 'chalk';
 import * as ado from '../api/ado.js';
-import { writeConfig, writeRefs } from '../core/state.js';
+import globalConfig from '../core/config.js';
+import { writeConfig, writeRefs, findProjectRoot } from '../core/state.js';
 import {
   adoToMarkdown,
   workItemFileName,
@@ -65,6 +66,15 @@ function parseAdoUrl(url) {
 }
 
 export default async function cloneCommand(url, opts = {}) {
+  // Guard: check if we're inside an existing adoboards project
+  const existingRoot = findProjectRoot('.');
+  if (existingRoot) {
+    console.error(chalk.red('Error: already inside an adoboards project.'));
+    console.error(chalk.red(`  Project root: ${existingRoot}`));
+    console.error(chalk.yellow('  Move to a directory outside this project before cloning.'));
+    process.exit(1);
+  }
+
   const { orgUrl, project } = parseAdoUrl(url);
   const targetDir = project;
 
@@ -168,7 +178,16 @@ export default async function cloneCommand(url, opts = {}) {
   }
 
   // 5. Create iteration folder structure for current year and future only
-  const iterationPaths = flattenTree(iterations);
+  const allIterationPaths = flattenTree(iterations);
+  const iterationFilter = opts.iteration || globalConfig.get('iterationFilter') || '';
+  const iterationPaths = iterationFilter
+    ? allIterationPaths.filter((p) => p.startsWith(iterationFilter) || iterationFilter.startsWith(p))
+    : allIterationPaths;
+
+  if (iterationFilter) {
+    console.log(chalk.dim(`  Iteration filter: ${iterationFilter} (${iterationPaths.length} of ${allIterationPaths.length} iterations)`));
+  }
+
   const currentYear = new Date().getFullYear();
   const areaPaths = workItems.length
     ? [...new Set(workItems.map((wi) => {
@@ -208,13 +227,15 @@ export default async function cloneCommand(url, opts = {}) {
     project,
     lastSync: new Date().toISOString(),
     areas: flattenTree(areas),
-    iterations: flattenTree(iterations),
+    iterations: iterationPaths,
   };
   if (opts.area) cloneConfig.areaFilter = opts.area;
   if (since) cloneConfig.sinceFilter = since;
   if (!opts.all) cloneConfig.stateFilter = ['New', 'Active', 'Resolved'];
   if (assignees) cloneConfig.assigneeFilter = assignees;
   if (userEmail) cloneConfig.userEmail = userEmail;
+  if (iterationFilter) cloneConfig.iterationFilter = iterationFilter;
+  if (globalConfig.get('allowFolderEdits')) cloneConfig.allowFolderEdits = true;
   writeConfig(targetDir, cloneConfig);
 
   writeRefs(targetDir, refs);

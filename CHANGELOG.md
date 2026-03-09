@@ -7,30 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-03-09
+
 ### Added
 
-- **`adoboards status`** - Move detection for relocated files
+- **`adoboards status`** - Move detection and structural folder warnings
   - Files moved to a different folder now show as `moved` or `moved + modified` instead of `deleted`
   - Matches files by frontmatter `id` against refs, not just by path
   - Shows old path -> new path with a tip to stage and push
+  - Detects renamed structural folders (e.g. `itners` instead of `iterations`) and warns
+  - Exits with error if `areas/` folder is missing or renamed
+- **`adoboards diff`** - Finds moved files by frontmatter ID
+  - Previously showed "not tracked" for files moved from their original path
+  - Now matches by frontmatter `id` against refs when path lookup fails
 - **`adoboards pull`** - Moves files back to their correct location
-  - Scans the filesystem by frontmatter `id` to find files wherever they are
+  - Scans the entire project (not just `areas/`) by frontmatter `id` to find files wherever they are
   - Moved files with no local edits are overwritten with remote content at the correct path
   - Moved files with local edits are moved back to the correct path with edits preserved
   - Moved files with local edits AND remote changes trigger a conflict (`.remote.md`)
   - Cleans up empty directories after moving files back
+  - Blocks pull if there are staged files not yet pushed (prevents accidental overwrites)
   - Summary now shows `Moved back` count
 - **`adoboards add`** - Move warnings when staging relocated files
   - Shows old path -> new path when staging a file that was moved from its ref location
+- **`adoboards clone`** - Guardrail for nested cloning
+  - Blocks clone if already inside an adoboards project (detects `.adoboards/` in parent dirs)
+  - New `--iteration <path>` flag to filter iterations at clone time
 - **Folder structure guardrails** on `add` and `push`
   - Files must be under `areas/` and inside a `backlog/` or `iterations/` folder
   - Catches misspelled folder names (e.g. `iteratoins` -> "did you mean iterations?") via Levenshtein distance
   - Rejects files in unknown structural folders with clear error messages
   - Supports nested area paths (e.g. `areas/Team/Backend/backlog/`)
-- **`allowFolderEdits` config option** (`.adoboards/config.json`)
-  - Default `false`: area and iteration folder paths must match known ADO paths from config
-  - Set to `true` to allow creating custom folders (structural folders still protected)
-
+- **`adoboards config`** - New wizard options
+  - `iterationFilter`: set a root iteration path to exclude other teams' iterations (e.g. `Project\TeamA`)
+  - `allowFolderEdits`: toggle folder creation protection (default: protected)
 ### Changed
 
 - **`adoboards pull`** - Full field comparison for local edit detection

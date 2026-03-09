@@ -1,4 +1,4 @@
-import { readdirSync, statSync, readFileSync } from 'node:fs';
+import { readdirSync, statSync, readFileSync, existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import chalk from 'chalk';
 import Table from 'cli-table3';
@@ -15,6 +15,16 @@ export default function statusCommand() {
   const config = readConfig(root);
   const refs = readRefs(root);
   const staged = new Set(readStaged(root));
+
+  // Check structural integrity - areas/ folder must exist
+  const areasDir = join(root, 'areas');
+  if (!existsSync(areasDir)) {
+    console.log(chalk.bold(`\n  ${config.project} - status\n`));
+    console.log(chalk.red('  Error: areas/ folder is missing or was renamed.'));
+    console.log(chalk.red('  This folder is required for adoboards to work.'));
+    console.log(chalk.yellow('  Fix: rename it back to "areas/" or run "adoboards pull" to restore.\n'));
+    process.exit(1);
+  }
 
   // Build reverse map: path -> id
   const pathToId = {};
@@ -110,6 +120,12 @@ export default function statusCommand() {
     rows.push([chalk.red('deleted'), chalk.red(d.path), chalk.red(d.id)]);
   }
 
+  // Check for renamed structural folders
+  const folderWarnings = checkStructuralFolders(root);
+  for (const w of folderWarnings) {
+    rows.push([chalk.red('warning'), chalk.red(w.path), chalk.red(w.issue)]);
+  }
+
   if (!rows.length) {
     console.log(chalk.dim('  Nothing changed.\n'));
     return;
@@ -154,12 +170,19 @@ function hasChanges(frontmatter, rawContent, refFields) {
   // Body changes
   const { content: body } = matter(rawContent);
   const sections = parseSections(body);
-  const refDesc = htmlToPlainText(refFields['System.Description'] || '');
-  const refAc = htmlToPlainText(refFields['Microsoft.VSTS.Common.AcceptanceCriteria'] || '');
-  const localDesc = (sections.description || '').trim();
-  const localAc = (sections.acceptanceCriteria || '').trim();
-  if (localDesc !== refDesc) return true;
-  if (localAc !== refAc) return true;
+
+  const bodyChecks = [
+    { local: sections.description, remote: refFields['System.Description'] },
+    { local: sections.acceptanceCriteria, remote: refFields['Microsoft.VSTS.Common.AcceptanceCriteria'] },
+    { local: sections.reproSteps, remote: refFields['Microsoft.VSTS.TCM.ReproSteps'] },
+    { local: sections.systemInfo, remote: refFields['Microsoft.VSTS.TCM.SystemInfo'] },
+  ];
+
+  for (const check of bodyChecks) {
+    const localText = (check.local || '').trim();
+    const remoteText = htmlToPlainText(check.remote || '');
+    if (localText !== remoteText) return true;
+  }
 
   return false;
 }
@@ -214,6 +237,80 @@ function htmlToPlainText(html) {
 function findWorkItemFiles(root) {
   const areasDir = join(root, 'areas');
   return findMdRecursive(areasDir, root);
+}
+
+/**
+ * Scan area folders for unknown subfolders that might be renamed backlog/iterations.
+ */
+function checkStructuralFolders(root) {
+  const warnings = [];
+  const areasDir = join(root, 'areas');
+  const VALID_BUCKETS = ['backlog', 'iterations'];
+
+  // Recursively check area directories for structural folders
+  function checkDir(dir) {
+    let entries;
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      return;
+    }
+
+    const subdirs = entries.filter((e) => {
+      try { return statSync(join(dir, e)).isDirectory(); } catch { return false; }
+    });
+
+    // Check if this directory has any valid bucket folders
+    const hasBucket = subdirs.some((d) => VALID_BUCKETS.includes(d));
+    const hasUnknown = subdirs.filter((d) => !VALID_BUCKETS.includes(d));
+
+    if (hasBucket) {
+      // Area level - check for suspicious siblings of backlog/iterations
+      for (const d of hasUnknown) {
+        const dist = levenshteinDist(d.toLowerCase(), 'backlog');
+        const dist2 = levenshteinDist(d.toLowerCase(), 'iterations');
+        if ((dist > 0 && dist <= 3) || (dist2 > 0 && dist2 <= 3)) {
+          const match = dist <= dist2 ? 'backlog' : 'iterations';
+          const relPath = relative(root, join(dir, d));
+          warnings.push({ path: relPath, issue: `looks like misspelled "${match}"` });
+        }
+      }
+    } else if (subdirs.length > 0 && dir !== areasDir) {
+      // No bucket folder found at this level - could be nested area or renamed
+      // Check if any subfolder looks like a misspelled bucket
+      for (const d of subdirs) {
+        const dist = levenshteinDist(d.toLowerCase(), 'backlog');
+        const dist2 = levenshteinDist(d.toLowerCase(), 'iterations');
+        if ((dist > 0 && dist <= 3) || (dist2 > 0 && dist2 <= 3)) {
+          const match = dist <= dist2 ? 'backlog' : 'iterations';
+          const relPath = relative(root, join(dir, d));
+          warnings.push({ path: relPath, issue: `looks like misspelled "${match}"` });
+        } else {
+          // Recurse into subfolders (might be nested area path)
+          checkDir(join(dir, d));
+        }
+      }
+    }
+  }
+
+  checkDir(areasDir);
+  return warnings;
+}
+
+function levenshteinDist(a, b) {
+  const m = a.length;
+  const n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
 }
 
 function findMdRecursive(dir, root) {

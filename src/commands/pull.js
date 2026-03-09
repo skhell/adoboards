@@ -3,7 +3,7 @@ import { join, relative } from 'node:path';
 import chalk from 'chalk';
 import matter from 'gray-matter';
 import * as ado from '../api/ado.js';
-import { readConfig, writeConfig, readRefs, writeRefs, findProjectRoot } from '../core/state.js';
+import { readConfig, writeConfig, readRefs, writeRefs, readStaged, findProjectRoot } from '../core/state.js';
 import { adoToMarkdown, workItemFileName, workItemDirPath, buildParentMap } from '../core/mapper.js';
 
 export default async function pullCommand() {
@@ -16,6 +16,18 @@ export default async function pullCommand() {
   const config = readConfig(root);
   const refs = readRefs(root);
   const lastSync = config.lastSync;
+
+  // Warn if there are staged changes that haven't been pushed
+  const staged = readStaged(root);
+  if (staged.length) {
+    console.log(chalk.yellow(`\n  Warning: ${staged.length} staged file${staged.length !== 1 ? 's' : ''} not yet pushed.`));
+    console.log(chalk.yellow('  Pull may overwrite local changes. Push first or unstage to continue.\n'));
+    console.log(chalk.dim('  Staged files:'));
+    for (const s of staged.slice(0, 5)) console.log(chalk.dim(`    ${s}`));
+    if (staged.length > 5) console.log(chalk.dim(`    ... and ${staged.length - 5} more`));
+    console.log();
+    process.exit(1);
+  }
 
   console.log(chalk.bold(`\n  Pulling changes from ${config.project}...\n`));
   if (lastSync) {
@@ -227,13 +239,33 @@ function htmlToPlainText(html) {
 }
 
 /**
- * Scan areas/ to build a map of work item ID -> actual file path.
- * This finds files even if they were moved from their ref path.
+ * Scan project to build a map of work item ID -> actual file path.
+ * Scans all directories (not just areas/) to find files even if
+ * the areas folder was renamed or files were moved elsewhere.
  */
 function buildIdToPathMap(root) {
   const map = new Map();
-  const areasDir = join(root, 'areas');
-  scanForIds(areasDir, root, map);
+  // Scan all top-level directories except hidden/system ones
+  let entries;
+  try {
+    entries = readdirSync(root);
+  } catch {
+    return map;
+  }
+
+  const skipDirs = new Set(['.adoboards', '.git', 'node_modules', 'templates', 'reports']);
+  for (const entry of entries) {
+    if (skipDirs.has(entry) || entry.startsWith('.')) continue;
+    const fullPath = join(root, entry);
+    try {
+      if (statSync(fullPath).isDirectory()) {
+        scanForIds(fullPath, root, map);
+      }
+    } catch {
+      // skip
+    }
+  }
+
   return map;
 }
 

@@ -331,9 +331,21 @@ adoboards clone https://acmecorp.visualstudio.com/YourProject --area "YourProjec
 | `--area <path>` | _(none - entire project)_ | Only items under this area path and all sub-areas beneath it |
 | `--assignee <users>` | _(none - all users)_ | `@me` for your items, or comma-separated emails for specific people |
 | `--since <date>` | Jan 1 of current year | Only items changed since this date |
+| `--iteration <path>` | _(from config)_ | Only create iteration folders under this root path (e.g. `Project\TeamA`) |
 | `--all` | _(off)_ | Disable all filters - clone everything including Closed/Removed items and all history |
 
 By default, clone skips **Closed** and **Removed** items and only pulls items changed since **January 1st of the current year**. This keeps your local tree focused on what matters now - not the 8000 stories from 2019 nobody will ever read again.
+
+If your ADO project has hundreds of iterations from multiple teams, use `--iteration` or set `iterationFilter` in `adoboards config` to only sync your team's iterations:
+
+```bash
+# Only iterations under your team's path
+adoboards clone https://dev.azure.com/acmecorp/Project --iteration "Project\TeamA"
+
+# Or set it permanently in config (applies to all future clones)
+adoboards config
+# -> Iteration root path: Project\TeamA
+```
 
 Area matching is **case-insensitive** `"YourProject\network team"` works the same as `"YourProject\Network Team"`. Just wrap the value in quotes so the shell doesn't split on spaces.
 
@@ -433,6 +445,8 @@ adoboards pull            # Sync remote changes to local files
 ```
 
 Pull works like `git pull` - it restores the correct folder structure from ADO. If you moved files around locally, pull moves them back to where they belong. If you edited a file AND moved it, your edits are preserved but the file goes back to the correct path. If both you and someone on ADO changed the same item, you get a `.remote.md` conflict file to resolve manually.
+
+Pull will refuse to run if you have staged files that haven't been pushed yet - just like `git pull` warns about uncommitted changes. Push first, then pull.
 
 #### Folder guardrails
 

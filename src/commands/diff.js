@@ -22,7 +22,7 @@ export default function diffCommand(file) {
 }
 
 function diffFile(root, filePath, refs) {
-  // Find matching ref by path
+  // Find matching ref by path first, then by frontmatter ID (handles moved files)
   let refId = null;
   let ref = null;
   for (const [id, r] of Object.entries(refs)) {
@@ -33,6 +33,7 @@ function diffFile(root, filePath, refs) {
     }
   }
 
+  // If not found by path, try matching by frontmatter ID (file was moved)
   if (!ref) {
     try {
       const content = readFileSync(join(root, filePath), 'utf-8');
@@ -41,11 +42,17 @@ function diffFile(root, filePath, refs) {
         console.log(chalk.cyan(`\n  ${filePath} is a new item (id: pending) - no remote state to diff against.\n`));
         return;
       }
+      if (data.id != null && refs[data.id]) {
+        refId = String(data.id);
+        ref = refs[data.id];
+      }
     } catch {
       // fall through
     }
-    console.error(chalk.red(`\n  ${filePath} is not tracked. No remote state found.\n`));
-    return;
+    if (!ref) {
+      console.error(chalk.red(`\n  ${filePath} is not tracked. No remote state found.\n`));
+      return;
+    }
   }
 
   const absPath = join(root, filePath);
@@ -74,10 +81,12 @@ function diffAll(root, refs, config) {
   const areasDir = join(root, 'areas');
   const allFiles = findMdRecursive(areasDir, root);
 
-  // Build path -> id map
+  // Build path -> ref map AND id -> ref map
   const pathToRef = {};
+  const idToRef = {};
   for (const [id, r] of Object.entries(refs)) {
     pathToRef[r.path] = { id, ...r };
+    idToRef[id] = { id, ...r };
   }
 
   let found = false;
@@ -85,8 +94,21 @@ function diffAll(root, refs, config) {
   console.log(chalk.bold(`\n  ${config.project} - diff\n`));
 
   for (const filePath of allFiles) {
-    const ref = pathToRef[filePath];
-    if (!ref) continue;
+    let ref = pathToRef[filePath];
+
+    // If not found by path, try by frontmatter ID (moved file)
+    if (!ref) {
+      try {
+        const raw = readFileSync(join(root, filePath), 'utf-8');
+        const { data } = matter(raw);
+        if (data.id != null && data.id !== 'pending' && idToRef[data.id]) {
+          ref = idToRef[data.id];
+        }
+      } catch {
+        continue;
+      }
+      if (!ref) continue;
+    }
 
     let content;
     try {

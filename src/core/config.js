@@ -12,6 +12,8 @@ const config = new Conf({
     azureOpenaiEndpoint: { type: 'string' },
     azureOpenaiDeployment: { type: 'string' },
     azureOpenaiApiVersion: { type: 'string' },
+    iterationFilter: { type: 'string' },
+    allowFolderEdits: { type: 'boolean', default: false },
     reportsDir: { type: 'string' },
     userRole: { type: 'string' },
     userContext: { type: 'string' },
