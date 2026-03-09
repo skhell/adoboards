@@ -85,6 +85,13 @@ export default async function pushCommand(file) {
         }
       }
 
+      // Guardrail: validate folder structure
+      const structureIssue = validateFolderStructure(filePath, config);
+      if (structureIssue) {
+        skipped.push({ path: filePath, reason: structureIssue });
+        continue;
+      }
+
       validFiles.push(filePath);
     } catch {
       skipped.push({ path: filePath, reason: 'cannot parse frontmatter' });
@@ -235,6 +242,92 @@ export default async function pushCommand(file) {
   if (updated) console.log(chalk.green(`    Updated: ${updated}`));
   if (errors) console.log(chalk.red(`    Errors:  ${errors}`));
   console.log();
+}
+
+/**
+ * Validate file lives under proper folder structure.
+ * Returns a reason string if invalid, null if OK.
+ * Same logic as add.js but returns flat strings for the skipped list.
+ */
+function validateFolderStructure(filePath, config) {
+  if (!filePath.startsWith('areas/')) {
+    return 'file is outside the areas/ directory';
+  }
+
+  const parts = filePath.split('/');
+  if (parts.length < 4) return null;
+
+  const VALID_BUCKETS = ['backlog', 'iterations'];
+  const innerParts = parts.slice(1);
+
+  const bucketIdx = innerParts.findIndex((p) => VALID_BUCKETS.includes(p));
+
+  if (bucketIdx === -1) {
+    for (const part of innerParts) {
+      for (const c of VALID_BUCKETS) {
+        const dist = levenshtein(part.toLowerCase(), c);
+        if (dist > 0 && dist <= 3) {
+          return `folder "${part}" looks like a misspelling of "${c}" - rename it first`;
+        }
+      }
+    }
+    return 'file is not inside a backlog/ or iterations/ folder';
+  }
+
+  if (config?.allowFolderEdits) return null;
+
+  // Validate area path
+  if (config?.areas?.length) {
+    const areaSegments = innerParts.slice(0, bucketIdx);
+    if (areaSegments.length > 0) {
+      const localAreaPath = areaSegments.join('/');
+      const knownAreas = config.areas.map((a) => {
+        const n = a.replace(/\\/g, '/');
+        const i = n.indexOf('/');
+        return i === -1 ? '' : n.slice(i + 1);
+      }).filter(Boolean);
+
+      if (!knownAreas.includes(localAreaPath)) {
+        return `area path "${localAreaPath}" is not in the project (set allowFolderEdits in config to override)`;
+      }
+    }
+  }
+
+  // Validate iteration path
+  if (innerParts[bucketIdx] === 'iterations' && config?.iterations?.length) {
+    const iterSegments = innerParts.slice(bucketIdx + 1, -1);
+    if (iterSegments.length > 0) {
+      const localIterPath = iterSegments.join('/');
+      const knownIters = config.iterations.map((i) => {
+        const n = i.replace(/\\/g, '/');
+        const idx = n.indexOf('/');
+        return idx === -1 ? '' : n.slice(idx + 1);
+      }).filter(Boolean);
+
+      const matches = knownIters.some((ki) => ki === localIterPath || ki.startsWith(localIterPath + '/'));
+      if (!matches) {
+        return `iteration path "${localIterPath}" is not in the project (set allowFolderEdits in config to override)`;
+      }
+    }
+  }
+
+  return null;
+}
+
+function levenshtein(a, b) {
+  const m = a.length;
+  const n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
 }
 
 async function addParentLink(childId, parentId, orgUrl, project) {

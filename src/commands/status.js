@@ -31,18 +31,25 @@ export default function statusCommand() {
   const untracked = [];
   const stagedList = [];
 
+  const moved = [];
+
   for (const filePath of mdFiles) {
     const id = pathToId[filePath];
 
     if (id == null) {
-      // Not in refs - check if it has frontmatter with id: pending
+      // Not in refs by path - check frontmatter for id
       try {
         const content = readFileSync(join(root, filePath), 'utf-8');
         const { data } = matter(content);
         if (data.id === 'pending') {
           pending.push(filePath);
+        } else if (data.id != null && refs[data.id]) {
+          // File has a tracked ID but at a different path - it was moved
+          const ref = refs[data.id];
+          const hasFieldChanges = hasChanges(data, content, ref.fields);
+          moved.push({ path: filePath, oldPath: ref.path, id: data.id, alsoModified: hasFieldChanges });
         }
-        // Files without id: pending are not work items - skip silently
+        // Files without id are not work items - skip silently
       } catch {
         // Skip unreadable files
       }
@@ -64,11 +71,12 @@ export default function statusCommand() {
     }
   }
 
-  // Check for deleted (in refs but file gone)
+  // Check for deleted (in refs but file gone and not moved)
+  const movedIds = new Set(moved.map((m) => String(m.id)));
   const deleted = [];
   const mdFilesSet = new Set(mdFiles);
   for (const [id, ref] of Object.entries(refs)) {
-    if (!mdFilesSet.has(ref.path)) {
+    if (!mdFilesSet.has(ref.path) && !movedIds.has(id)) {
       deleted.push({ path: ref.path, id: Number(id) });
     }
   }
@@ -94,6 +102,10 @@ export default function statusCommand() {
   for (const p of pending) {
     rows.push([chalk.cyan('new'), chalk.cyan(p), chalk.cyan('pending')]);
   }
+  for (const m of moved) {
+    const label = m.alsoModified ? 'moved + modified' : 'moved';
+    rows.push([chalk.magenta(label), chalk.magenta(m.path), chalk.magenta(m.id)]);
+  }
   for (const d of deleted) {
     rows.push([chalk.red('deleted'), chalk.red(d.path), chalk.red(d.id)]);
   }
@@ -116,6 +128,16 @@ export default function statusCommand() {
 
   for (const row of rows) table.push(row);
   console.log(table.toString());
+
+  if (moved.length) {
+    console.log(chalk.magenta('\n  Moved files:'));
+    for (const m of moved) {
+      console.log(chalk.dim(`    ${m.oldPath}`));
+      console.log(chalk.magenta(`    -> ${m.path}`));
+    }
+    console.log(chalk.dim('\n  Tip: use "adoboards add" then "adoboards push" to update refs.'));
+  }
+
   console.log();
 }
 

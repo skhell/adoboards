@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`adoboards status`** - Move detection for relocated files
+  - Files moved to a different folder now show as `moved` or `moved + modified` instead of `deleted`
+  - Matches files by frontmatter `id` against refs, not just by path
+  - Shows old path -> new path with a tip to stage and push
+- **`adoboards pull`** - Moves files back to their correct location
+  - Scans the filesystem by frontmatter `id` to find files wherever they are
+  - Moved files with no local edits are overwritten with remote content at the correct path
+  - Moved files with local edits are moved back to the correct path with edits preserved
+  - Moved files with local edits AND remote changes trigger a conflict (`.remote.md`)
+  - Cleans up empty directories after moving files back
+  - Summary now shows `Moved back` count
+- **`adoboards add`** - Move warnings when staging relocated files
+  - Shows old path -> new path when staging a file that was moved from its ref location
+- **Folder structure guardrails** on `add` and `push`
+  - Files must be under `areas/` and inside a `backlog/` or `iterations/` folder
+  - Catches misspelled folder names (e.g. `iteratoins` -> "did you mean iterations?") via Levenshtein distance
+  - Rejects files in unknown structural folders with clear error messages
+  - Supports nested area paths (e.g. `areas/Team/Backend/backlog/`)
+- **`allowFolderEdits` config option** (`.adoboards/config.json`)
+  - Default `false`: area and iteration folder paths must match known ADO paths from config
+  - Set to `true` to allow creating custom folders (structural folders still protected)
+
+### Changed
+
+- **`adoboards pull`** - Full field comparison for local edit detection
+  - Now checks all frontmatter fields (title, state, area, iteration, storyPoints, businessValue) and body sections (description, acceptance criteria, repro steps, system info)
+  - Previously only checked title and state, which caused silent overwrites of other local edits
+
 ## [0.3.0] - 2026-03-08
 
 ### Added

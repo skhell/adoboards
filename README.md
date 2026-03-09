@@ -407,10 +407,12 @@ Area is auto-populated from your clone config if `--area` is not provided.
 ### Check what changed
 
 ```bash
-adoboards status          # What's modified, new, or deleted locally
+adoboards status          # What's modified, new, moved, or deleted locally
 adoboards diff            # Field-level diff of all modified files vs remote
 adoboards diff story.md   # Diff a single file
 ```
+
+`status` tracks files by their frontmatter `id`, not just file path. If you move a file to a different folder, it shows as `moved` (not `deleted`). If you also edited it, it shows as `moved + modified`.
 
 `diff` compares your local frontmatter and body sections against the last known remote state (stored in refs.json). Shows red for remote values and green for local changes - per field, not per line.
 
@@ -429,6 +431,14 @@ New items (`id: pending`) get created in ADO. Existing items get patched with on
 ```bash
 adoboards pull            # Sync remote changes to local files
 ```
+
+Pull works like `git pull` - it restores the correct folder structure from ADO. If you moved files around locally, pull moves them back to where they belong. If you edited a file AND moved it, your edits are preserved but the file goes back to the correct path. If both you and someone on ADO changed the same item, you get a `.remote.md` conflict file to resolve manually.
+
+#### Folder guardrails
+
+By default, `add` and `push` enforce that files live under the correct folder structure (`areas/<team>/backlog/` or `areas/<team>/iterations/<sprint>/`). This prevents accidents like renaming `iterations` to `iteratoins` which would break syncing.
+
+If you need to create custom folders (e.g. for a new area path not yet in ADO), set `allowFolderEdits: true` in `.adoboards/config.json`. Structural folders (`areas`, `backlog`, `iterations`) are always protected regardless of this setting.
 
 ### Generate sprint reports (offline)
 
