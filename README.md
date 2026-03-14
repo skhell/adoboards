@@ -84,12 +84,14 @@ adoboards config
 It will ask for:
 1. Your Azure DevOps **org URL** and **project name**
 2. A **default area path** (e.g. `YourTeam/DCArchitecture`)
-3. **Secrets backend** KeePass (recommended), OS keychain, or local env vars
-4. Path to your **`.kdbx` file** (if using KeePass)
-5. Your preferred **AI provider** (optional - skip if you don't have API access)
-6. **AI persona** describe your role/title and what your team does - will be used by AI promt to write in your domain language
-7. **Team capacity** team size, velocity per person, sprint length
-8. **Reports directory** where sprint reports are saved (default: `./reports/`)
+3. Your **email address** - used to auto-assign work items during `gen` and kept in sync automatically on every `pull`
+4. **Default project path** - where `gen` saves items when no `--project` flag is given
+5. **Secrets backend** KeePass (recommended), OS keychain, or local env vars
+6. Path to your **`.kdbx` file** (if using KeePass)
+7. Your preferred **AI provider** (optional - skip if you don't have API or Github Copilot access)
+8. **AI persona** describe your role/title and what your team does - will be used by AI prompt to write in your domain language
+9. **Team capacity** team size, velocity per person, sprint length
+10. **Reports directory** where sprint reports are saved (default: `~/Downloads/adoreports/`)
 
 Or skip the wizard and set the secrets backend directly:
 
@@ -388,6 +390,33 @@ adoboards add areas/TeamName/backlog/STORY-pending-deploy-dns-resolver-east-us.m
 adoboards push
 ```
 
+#### Frontmatter field reference
+
+Every work item is a markdown file with a YAML frontmatter block. Here's what each field maps to in ADO:
+
+| Field | Types | ADO field | Notes |
+|---|---|---|---|
+| `id` | all | `System.Id` | Set to `pending` for new items; replaced with real ID after push |
+| `type` | all | `System.WorkItemType` | `Epic`, `Feature`, `User Story`, `Bug`, `Task` |
+| `title` | all | `System.Title` | |
+| `state` | all | `System.State` | `New`, `Active`, `Resolved`, `Closed` |
+| `area` | all | `System.AreaPath` | Full ADO area path |
+| `iteration` | all | `System.IterationPath` | Full ADO iteration path |
+| `parent` | all | `System.Parent` | Numeric ID, or `FEAT`/`FEAT-1`/`EPIC` placeholders when generating |
+| `assignee` | all | `System.AssignedTo` | Email address; auto-filled from your config |
+| `tags` | all | `System.Tags` | List of strings; stored as `tag1; tag2` in ADO |
+| `priority` | all | `Microsoft.VSTS.Common.Priority` | `1` (high) – `4` (very low) |
+| `storyPoints` | Story, Bug, Task | `Microsoft.VSTS.Scheduling.StoryPoints` | Numeric; paired with `tshirt` |
+| `tshirt` | Story, Bug, Task | _(derived)_ | `XS`=1, `S`=3, `M`=5, `L`=8, `XL`=13 |
+| `effort` | Epic, Feature | `Microsoft.VSTS.Scheduling.Effort` | Engineering days estimate |
+| `businessValue` | Epic, Feature | `Microsoft.VSTS.Common.BusinessValue` | 1–10 |
+| `timeCriticality` | Epic | `Microsoft.VSTS.Common.TimeCriticality` | 1–10 |
+| `complexity` | Epic | `Microsoft.VSTS.Common.Complexity` | 1–10 |
+| `risk` | Epic, Feature, Story | `Microsoft.VSTS.Common.Risk` | `"1 - High"`, `"2 - Medium"`, `"3 - Low"` |
+| `startDate` | Epic, Feature, Story | `Microsoft.VSTS.Scheduling.StartDate` | `YYYY-MM-DD` |
+| `targetDate` | Epic, Feature | `Microsoft.VSTS.Scheduling.TargetDate` | `YYYY-MM-DD` |
+| `finishDate` | Story, Bug, Task | `Microsoft.VSTS.Scheduling.FinishDate` | `YYYY-MM-DD` |
+
 #### Moving items into sprints
 
 When a story is ready for a sprint, move the file from `backlog/` to the sprint folder and update the `iteration` field in the frontmatter. You can do this from VSCode (drag and drop) or from the terminal:
@@ -436,7 +465,24 @@ adoboards add story.md    # Stage a specific file
 adoboards push            # Push staged changes to Azure DevOps
 ```
 
-New items (`id: pending`) get created in ADO. Existing items get patched with only the changed fields.
+> [!NOTE]
+> If your path contains spaces, wrap it in quotes:
+
+```bash
+adoboards add "areas/project/subproject name with space/backlog/STORY-pending-my-story.md"
+```
+`adoboards status` always shows paths with spaces pre-quoted so you can copy-paste them directly.
+
+New items (`id: pending`) get created in ADO and their local file/folder is automatically renamed from `STORY-pending-slug.md` -> `STORY-XXXXXXX-slug.md` after push. Existing items get patched with only the changed fields.
+
+#### Unstage
+
+Changed your mind? Remove files from the staging area without touching your local edits:
+
+```bash
+adoboards unstage .           # Clear everything staged
+adoboards unstage story.md    # Unstage a specific file
+```
 
 ### Pull remote changes
 
@@ -445,6 +491,8 @@ adoboards pull            # Sync remote changes to local files
 ```
 
 Pull works like `git pull` - it restores the correct folder structure from ADO. If you moved files around locally, pull moves them back to where they belong. If you edited a file AND moved it, your edits are preserved but the file goes back to the correct path. If both you and someone on ADO changed the same item, you get a `.remote.md` conflict file to resolve manually.
+
+Pull also **silently refreshes your email address** from ADO on every run - useful if your company changes your email or you switch accounts. No manual `adoboards config` needed.
 
 Pull will refuse to run if you have staged files that haven't been pushed yet - just like `git pull` warns about uncommitted changes. Push first, then pull.
 
@@ -492,6 +540,23 @@ adoboards gen "Automate firewall rule deployment" --type feature --parent 42
 adoboards gen "DNS failover testing" --type story --parent 67
 ```
 
+The idea can also be a **file path** - useful when you have a design doc or notes file:
+
+```bash
+adoboards gen ~/Documents/ideas/migration-proposal.md
+adoboards gen ./design-doc.md --type feature --parent 42
+```
+
+By default, files are saved to your `defaultProjectPath` from config. Override per command:
+
+```bash
+# Save to a different project folder
+adoboards gen "Build monitoring dashboard" --project ~/Documents/adoboards/OtherProject
+
+# Override assignee (default: your email from config)
+adoboards gen "Automate failover" --assignee "tia@company.com"
+```
+
 Pick your AI provider per command if you want:
 
 ```bash
@@ -499,6 +564,16 @@ adoboards gen "..." --provider openai
 adoboards gen "..." --provider gemini
 adoboards gen "..." --provider azure-openai
 ```
+
+Generated files land in `areas/<team>/backlog/` with `id: pending`. The `assignee` field is pre-filled with your email from config. Review, then stage and push:
+
+```bash
+adoboards status # See what was generated
+adoboards add . # Stage all new items
+adoboards push  # Create in ADO (Epic first, then Features, then Stories)
+```
+
+Push respects hierarchy order automatically - Epics are created before Features, Features before Stories, and `parent: FEAT`/`FEAT-1`/`FEAT-2` placeholders are resolved to the real IDs that come back from ADO.
 
 ### Optimize existing work items
 

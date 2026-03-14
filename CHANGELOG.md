@@ -7,6 +7,205 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.46] - 2026-03-14
+
+### Added
+- **GitHub Copilot provider** with `gh auth token` fallback and secret/env support via `github-copilot-key`
+- **`adoboards gen`** now accepts inline text, current-directory files, relative and absolute paths, and `~/.adoboards/gen/YYYY/` idea names; added `--project` and `--assignee`
+- **`adoboards pull --force`** to discard local edits, refetch full remote state, and clear the staged index
+- **`adoboards clone [url]`** command can be executed without url as can now use saved `orgUrl` and `project` when the URL is omitted
+
+### Changed
+- **`adoboards config`** now captures `defaultProjectPath` and `userEmail`, and shows provider-specific idea-file tips plus GitHub Copilot setup guidance
+- **`adoboards gen`** now writes generated items into the real backlog layout: Epics and Features as folders, Stories/Bugs/Tasks as flat files
+- **`adoboards status`** now uses git-style sections, hash-based change detection, and clearer moved/deleted summaries
+- **`adoboards diff`** now reconstructs the last pulled version and shows git-style hunks instead of field-by-field output
+- **`adoboards report`** now treats `Committed` as in-progress and reports `Closed` and `Resolved` separately
+- **Packaging** now ships `CHANGELOG.md`, includes `marked`, and reads `adoboards --version` directly from `package.json`
+
+### Fixed
+- **`adoboards clone`** now stores content hashes in refs, persists `userEmail`, applies default area filters consistently, and creates iteration folders for filtered area subtrees
+- **`adoboards pull`** now refreshes `userEmail` on every sync, refreshes iteration folders, preserves move detection via refs hashes, and only emits conflicts when both local and remote changed without `--force`
+- **`adoboards push`** now resolves parent placeholders more reliably, renames stale `*-pending-*` paths during updates too, stores content hashes after push, and links parents using the correct ADO `workItems` relation URL
+- **`adoboards gen`** now parses multi-file AI output more reliably by handling code fences, missing closing frontmatter markers, YAML task-list noise, and escaped backslashes
+
+## [0.3.39] - 2026-03-13
+
+### Added
+- **Epic fields** fully mapped end-to-end:
+  - `priority` - `Microsoft.VSTS.Common.Priority` (1=High, 2=Medium, 3=Low, 4=Very Low)
+  - `complexity` - `Microsoft.VSTS.Common.Complexity` (1–10)
+  - `timeCriticality` - `Microsoft.VSTS.Common.TimeCriticality` (1–10)
+  - All added to mapper read/write, `FIELD_MAP`, and `gen-epic.md` template with AI guidance
+
+### Fixed
+- **Date parsing fixed**: ADO dates like `1/1/2023 1:00 AM` now correctly converted to `YYYY-MM-DD` using `new Date(val).toISOString().slice(0,10)` instead of `.slice(0,10)` on the raw string
+- **Date push fixed**: `toAdoDate()` helper converts `YYYY-MM-DD` user input to full ISO 8601 for ADO API
+
+## [0.3.38] - 2026-03-13
+
+### Added
+- **`risk`, `startDate`, `targetDate`, `finishDate`** fields added end-to-end:
+  - `mapper.js` - read from ADO on pull/clone (`Microsoft.VSTS.Common.Risk`, `Microsoft.VSTS.Scheduling.StartDate/TargetDate/FinishDate`)
+  - `ado.js` - `FIELD_MAP` entries for push/update
+  - `gen-feature.md` - Feature gets `risk`, `startDate`, `targetDate`; Story gets `risk`, `startDate`, `finishDate`
+  - `gen-epic.md` - same fields added to both Feature and Story templates
+  - Dates stored as `YYYY-MM-DD` strings; empty `""` when not set
+
+## [0.3.37] - 2026-03-13
+
+### Fixed
+- **`adoboards push`** (update path) - Rich-text fields (`description`, `acceptanceCriteria`, etc.) are now always included in updates when present - previously skipped because refs store HTML while the file has markdown, making string comparison unreliable
+- **`adoboards push`** (update path) - Pending folders/files are now renamed to real IDs on update too (not only on create), fixing items pushed before 0.3.35
+
+## [0.3.36] - 2026-03-13
+
+### Added
+- Added `marked` dependency for Markdown -> HTML conversion
+
+### Fixed
+- **`adoboards push`** - Description, Acceptance Criteria, Repro Steps, and System Info are now converted from Markdown to HTML before sending to ADO. Previously sent as plain text causing compressed display and "We support markdown, you can convert this field" prompt in ADO web UI
+
+## [0.3.35] - 2026-03-13
+
+### Fixed
+- **`adoboards push`** - Pending folders and files are renamed to real IDs after successful creation:
+  - `FEAT-pending-slug/` -> `FEAT-XXXXXXX-slug/` (folder-based: Epic, Feature)
+  - `STORY-pending-slug.md` -> `STORY-2821854-slug.md` (flat files: Story, Bug, Task)
+  - Staged and refs paths are updated automatically to match the new names
+
+## [0.3.34] - 2026-03-13
+
+### Fixed
+- **`adoboards status`** - Staged pending files no longer appear in the "New work items" section - once staged they only show under "Changes staged for push"
+
+## [0.3.33] - 2026-03-13
+
+### Fixed
+- **`adoboards config`** - Now asks for `Your email` (stored as `userEmail`) and shows it in the summary - this is used as the default assignee in `adoboards gen`
+- **`adoboards pull`** - Automatically refreshes `userEmail` from ADO's `connectionData` on every pull, keeping it in sync if company email changes. No manual update needed
+
+## [0.3.31] - 2026-03-13
+
+### Fixed
+- **`adoboards status`** - Paths containing spaces are now wrapped in double quotes in all output sections (staged, modified, new, moved, deleted, warnings) so they can be safely copy-pasted into `adoboards add`/`adoboards unstage`
+
+## [0.3.30] - 2026-03-13
+
+### Fixed
+- **`adoboards unstage`** - Fixed `staged.clear is not a function` crash - `readStaged` returns an array, not a Set; unstage now uses array filtering correctly
+
+## [0.3.29] - 2026-03-13
+
+### Added
+- **`adoboards unstage`** - New command to remove files from the staging area
+  - `adoboards unstage .` - clears everything staged
+  - `adoboards unstage path/to/file.md` - removes a specific file
+  - Multiple files supported: `adoboards unstage file1.md file2.md`
+
+## [0.3.28] - 2026-03-13
+
+### Fixed
+- **`adoboards gen`** - Stories/Bugs/Tasks now written flat in backlog (alongside Feature folders), matching the real pulled structure. Reverted incorrect nesting inside feature folder introduced in 0.3.27
+- **`adoboards push`** - Parent placeholder resolution updated to match flat structure: `FEAT` -> first feature created in this push, `FEAT-1`/`FEAT-2` -> 1-based index into features created in order. Enables correct multi-feature epic push (Epic -> Feature-1, Feature-2 -> Stories resolve by index)
+
+## [0.3.27] - 2026-03-13
+
+### Fixed
+- **`adoboards gen`** - Stories/Bugs/Tasks are now written inside their parent Feature folder (`FEAT-pending-slug/STORY-pending-slug.md`) instead of the backlog root. Tracks `lastFeatureFolder` as files are processed in order - works correctly for both `--type feature` (one feature + its stories) and `--type epic` (multiple features each with their own stories)
+
+## [0.3.26] - 2026-03-13
+
+### Fixed
+- **`adoboards --version`** - Version is now read dynamically from `package.json` instead of being hardcoded in `bin/adoboards.js` - was stuck at `0.3.14` regardless of `npm version patch` bumps
+- **`adoboards gen`** - Generated files now re-serialized through gray-matter so frontmatter format (especially `tags`) matches pull/clone output - block list (`- item`) instead of inline brackets (`[item1, item2]`). Assignee injection also migrated to this re-serialization step (no regex replace needed)
+
+## [0.3.25] - 2026-03-13
+
+### Added
+- **`effort` field for Features** - added to `gen-feature.md` and `gen-epic.md` prompts, mapper read (`Microsoft.VSTS.Scheduling.Effort`), and `FIELD_MAP` in `ado.js` so it round-trips correctly through push/pull
+
+### Fixed
+- **`businessValue` missing from generated Features** - added to Feature frontmatter template in both `gen-feature.md` and `gen-epic.md`
+
+## [0.3.24] - 2026-03-13
+
+### Fixed
+- **`adoboards gen`** - Assignee now reliably injected into all generated files (Feature, Stories, etc.) via post-processing after AI response - AI can no longer silently output `assignee: ""` when a userEmail is configured
+
+## [0.3.23] - 2026-03-12
+
+### Fixed
+- **`adoboards push`** - Pending items in a hierarchy are now created in correct dependency order
+  - Sorts staged pending items: Epic -> Feature -> Story/Bug/Task before pushing
+  - Resolves `parent: FEAT` placeholder to the real ADO ID of the feature just created in the same folder
+  - Resolves `parent: EPIC` placeholder to the real ADO ID of the epic created in the same push batch
+  - Already-tracked (non-pending) items preserve their original order
+
+## [0.3.22] - 2026-03-12
+
+### Changed
+- **`adoboards gen --type epic`** - Now generates full hierarchy: Epic + Features + Stories (was single Epic only)
+- **`adoboards gen --type feature`** - Now generates Feature + Stories (was single Feature only)
+- **`adoboards gen`** (no type / `--type hierarchy`) - unchanged, still generates Epic + Features + Stories
+- **`adoboards gen --type story`** - unchanged, still generates a single Story
+
+## [0.3.21] - 2026-03-12
+
+### Fixed
+- **`adoboards gen`** - Feature/story body (description, acceptance criteria) no longer stripped from generated files
+  - Root cause: multi-frontmatter split regex was splitting on the closing `---` of the frontmatter, separating the body into a discarded second block
+  - Fixed: split only when `---` is followed by known YAML keys (`id:`, `type:`, `title:`, etc.)
+- **`adoboards gen`** - Assignee now defaults to user email (`config.userEmail` -> global `userEmail` -> empty)
+- **`adoboards gen`** - Skip message now correctly reports which field is missing (type or title)
+- **`adoboards clone`** - User email saved to global config so `gen` can resolve the assignee from any directory
+
+### Added
+- **`adoboards gen --assignee <email>`** - Override the default assignee
+
+## [0.3.20] - 2026-03-11
+
+### Fixed
+- **`adoboards gen`** - Idea file in current working directory now checked before `~/.adoboards/gen/YEAR/`
+
+## [0.3.19] - 2026-03-11
+
+### Changed
+- **`adoboards gen`** - `CHANGELOG.md` added to npm package `files` field
+- Removed empty dead file `src/core/differ.js`
+
+## [0.3.18] - 2026-03-11
+
+### Added
+- **`adoboards gen`** - Flexible idea resolution from any path
+  - Relative paths (e.g. `./ideas/feature.md`) resolve from current working directory
+  - Absolute paths and `~/` paths read file directly
+  - Names with or without `.md` extension (no slashes) resolve from `~/.adoboards/gen/YEAR/`
+  - Plain inline text still works as before
+  - Resolution order documented in `--help`
+
+## [0.3.17] - 2026-03-10
+
+### Fixed
+- **`adoboards gen`** - Idea file year fallback: searches current year back 2 years so ideas written in a previous year are still found
+
+## [0.3.16] - 2026-03-10
+
+### Added
+- **`adoboards gen`** - Idea file support: store elaborate ideas as markdown files instead of inline text
+  - Names resolve from `~/.adoboards/gen/YEAR/NAME.md` automatically
+  - `--project <path>` flag to run `gen` from outside an adoboards project
+  - Falls back to global `defaultProjectPath` config when not inside a project
+- **`adoboards config`** - New settings
+  - `defaultProjectPath`: set once, run `adoboards gen` from anywhere
+  - Provider-specific idea file formatting tips shown after selecting AI provider
+- **`adoboards gen --help`** - Extended help with idea file pattern and examples
+
+## [0.3.15] - 2026-03-10
+
+### Fixed
+- **`adoboards pull`** - Store `parent` work item ID in `refs.json` entries so the VS Code extension can reconstruct the original markdown correctly
+
 ## [0.3.3] - 2026-03-09
 
 ### Added
