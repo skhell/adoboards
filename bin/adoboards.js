@@ -1,13 +1,17 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { version } = require('../package.json');
 
 const program = new Command();
 
 program
   .name('adoboards')
-  .description('Git-like CLI for Azure DevOps Boards with AI generation')
-  .version('0.3.3');
+  .description('Git-like CLI for Azure DevOps Boards with AI generation support')
+  .version(version);
 
 program
   .command('config')
@@ -19,8 +23,8 @@ program
   });
 
 program
-  .command('clone <url>')
-  .description('Clone work items from an Azure DevOps project (e.g. https://dev.azure.com/org/project)')
+  .command('clone [url]')
+  .description('Clone work items from an Azure DevOps project (e.g. https://dev.azure.com/org/project). URL defaults to orgUrl+project from config.')
   .option('--area <path>', 'Clone only items under this area path and all sub-areas beneath it')
   .option('--iteration <path>', 'Filter iterations to this root path (e.g. "Project\\TeamA")')
   .option('--assignee <users>', 'Filter by assignee: @me, user@company.com, or comma-separated list')
@@ -62,6 +66,14 @@ program
   });
 
 program
+  .command('unstage <files...>')
+  .description('Remove files from staging area (use . to clear all staged files)')
+  .action(async (files) => {
+    const { unstage } = await import('../src/commands/unstage.js');
+    await unstage(files);
+  });
+
+program
   .command('push [file]')
   .description('Push staged work items to Azure DevOps (or push a single file directly)')
   .action(async (file) => {
@@ -72,19 +84,36 @@ program
 program
   .command('pull')
   .description('Pull remote changes from Azure DevOps since last sync')
-  .action(async () => {
+  .option('--force', 'Overwrite local edits with remote state - discards all uncommitted changes (like git checkout .)')
+  .action(async (opts) => {
     const { default: pullCommand } = await import('../src/commands/pull.js');
-    await pullCommand();
+    await pullCommand(opts);
   });
 
 program
   .command('gen <idea>')
-  .description('Generate work items from an idea using AI')
+  .description('Generate work items from an idea (inline text or idea file name from ~/.adoboards/gen/YEAR/)')
   .option('--type <type>', 'Generation type: hierarchy, epic, feature, story (default: hierarchy)')
   .option('--parent <id>', 'Parent work item ID (required for feature and story)')
   .option('--area <path>', 'Override area path')
   .option('--dir <path>', 'Output directory (default: current directory)')
-  .option('--provider <name>', 'AI provider: anthropic, openai, gemini, azure-openai')
+  .option('--provider <name>', 'AI provider: anthropic, openai, gemini, azure-openai, github-copilot')
+  .option('--assignee <email>', 'Assignee email (default: user email from config)')
+  .option('--project <path>', 'adoboards project root (default: cwd or global defaultProjectPath)')
+  .addHelpText('after', `
+Examples:
+  adoboards gen "add user login with OAuth"                         inline text
+  adoboards gen feature-01.md --type feature --project ~/path/proj  name -> ~/.adoboards/gen/YEAR/
+  adoboards gen ./ideas/feature-01.md --project ~/path/proj         relative path
+  adoboards gen ~/Documents/ideas/feature-01.md                     absolute path
+
+Idea resolution order:
+  1. Absolute or ~/ path          -> read file directly
+  2. Relative path (contains /)   -> resolve from current directory
+  3. Name (no slashes, .md)       -> cwd first, then ~/.adoboards/gen/YEAR/
+  4. Plain text                   -> used as-is
+
+Run "adoboards config" to set a default project path and provider-specific tips.`)
   .action(async (idea, opts) => {
     const { default: genCommand } = await import('../src/commands/gen.js');
     await genCommand(idea, opts);
