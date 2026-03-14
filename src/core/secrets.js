@@ -7,6 +7,7 @@ const ENV_MAP = {
   'openai-key': 'ADOBOARDS_OPENAI_KEY',
   'gemini-key': 'ADOBOARDS_GEMINI_KEY',
   'azure-openai-key': 'ADOBOARDS_AZURE_OPENAI_KEY',
+  'github-copilot-key': 'ADOBOARDS_GITHUB_COPILOT_KEY',
 };
 
 // Cache the master password for the duration of the process

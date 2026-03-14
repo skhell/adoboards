@@ -29,7 +29,7 @@ export async function generate(promptName, variables = {}, opts = {}) {
     throw new Error(
       'No AI provider configured.\n' +
       '  Run: adoboards config (and select an AI provider)\n' +
-      '  Or use: --provider anthropic|openai|gemini',
+      '  Or use: --provider anthropic|openai|gemini|azure-openai|github-copilot',
     );
   }
 

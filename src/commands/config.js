@@ -67,7 +67,20 @@ export default async function configCommand(opts) {
     const project = await ask(rl, 'Project name', config.get('project'));
     config.set('project', project);
 
-    // 3. Default area path
+    // 3. Default project path
+    console.log(chalk.bold('\nDefault Project Path (optional)'));
+    console.log(chalk.dim('  Lets you run "adoboards gen" from anywhere without cd-ing into the project.'));
+    console.log(chalk.dim('  Example: ~/Documents/adoboards/MyProject\n'));
+    const defaultProjectPath = await ask(rl, 'Default project path', config.get('defaultProjectPath') || '');
+    if (defaultProjectPath) config.set('defaultProjectPath', defaultProjectPath);
+    else config.delete('defaultProjectPath');
+
+    // 3b. User email (used as default assignee in gen)
+    const userEmail = await ask(rl, 'Your email (default assignee for gen)', config.get('userEmail') || '');
+    if (userEmail) config.set('userEmail', userEmail);
+    else config.delete('userEmail');
+
+    // 4. Default area path
     const defaultArea = await ask(rl, 'Default area path (e.g. TeamName/SubArea)', config.get('defaultArea'));
     if (defaultArea) config.set('defaultArea', defaultArea);
 
@@ -104,6 +117,7 @@ export default async function configCommand(opts) {
       console.log(chalk.dim('     anthropic-key      Anthropic Claude API key'));
       console.log(chalk.dim('     openai-key         OpenAI ChatGPT API key'));
       console.log(chalk.dim('     gemini-key         Google Gemini API key'));
+      console.log(chalk.dim('     github-copilot-key GitHub PAT with Copilot scope (optional - gh CLI works too)'));
       console.log(chalk.dim('\n     Only ado-pat is required. AI keys are optional for gen/optimize/plan.\n'));
       console.log(chalk.bold('  How to get your Azure DevOps PAT (even with corporate SSO):\n'));
       console.log(chalk.dim('  1. Sign in to Azure DevOps in your browser (SSO handles auth)'));
@@ -125,7 +139,8 @@ export default async function configCommand(opts) {
       console.log(chalk.dim('    ADOBOARDS_ADO_PAT              - Azure DevOps PAT (required)'));
       console.log(chalk.dim('    ADOBOARDS_ANTHROPIC_KEY         - if using Claude'));
       console.log(chalk.dim('    ADOBOARDS_OPENAI_KEY            - if using ChatGPT'));
-      console.log(chalk.dim('    ADOBOARDS_GEMINI_KEY            - if using Gemini\n'));
+      console.log(chalk.dim('    ADOBOARDS_GEMINI_KEY            - if using Gemini'));
+      console.log(chalk.dim('    ADOBOARDS_GITHUB_COPILOT_KEY    - if using GitHub Copilot (or just use gh auth login)\n'));
       console.log(chalk.dim('  Or copy the template:  cp .env.example .env'));
       console.log(chalk.dim('  NEVER commit .env - it is in .gitignore but double-check.\n'));
     }
@@ -137,7 +152,7 @@ export default async function configCommand(opts) {
     const aiProvider = await askChoice(
       rl,
       'AI provider',
-      ['none', 'anthropic', 'openai', 'gemini', 'azure-openai'],
+      ['none', 'anthropic', 'openai', 'gemini', 'azure-openai', 'github-copilot'],
       config.get('aiProvider') || 'none',
     );
     if (aiProvider === 'none') {
@@ -145,6 +160,30 @@ export default async function configCommand(opts) {
       console.log(chalk.dim('  AI features disabled - you can enable later with: adoboards config'));
     } else {
       config.set('aiProvider', aiProvider);
+
+      // Idea file tip
+      const year = new Date().getFullYear();
+      const ideaDir = `~/.adoboards/gen/${year}/`;
+      const providerTips = {
+        anthropic:       'Claude handles long, rich markdown well. Include as much context as you want:\n' +
+                         '    headings, bullet lists, acceptance criteria, technical constraints.',
+        openai:          'GPT handles rich markdown well. Use headings and bullet lists.\n' +
+                         '    Be explicit about what you want (epic/feature/story breakdown).',
+        gemini:          'Gemini works best with clear structure. Use ## headings and bullet points.\n' +
+                         '    State the desired output format early in the file.',
+        'azure-openai':  'Same as OpenAI - rich markdown with headings and bullets works great.\n' +
+                         '    Add a "## Constraints" section for tech stack / org requirements.',
+        'github-copilot':'Copilot prefers concise, code-adjacent descriptions.\n' +
+                         '    Keep idea files focused; one clear goal per file works best.',
+      };
+      const tip = providerTips[aiProvider] || '';
+      console.log(chalk.bold('\n  Tip - store complex ideas as files instead of inline text:'));
+      console.log(chalk.dim(`    mkdir -p ${ideaDir}`));
+      console.log(chalk.dim(`    # write your idea to ${ideaDir}my-feature.md`));
+      console.log(chalk.dim(`    adoboards gen my-feature\n`));
+      if (tip) {
+        console.log(chalk.dim(`  For ${aiProvider}: ${tip}\n`));
+      }
 
       if (aiProvider === 'azure-openai') {
         // Azure OpenAI specific config
@@ -165,13 +204,29 @@ export default async function configCommand(opts) {
         }
         console.log();
       } else {
-        const keyNames = { anthropic: 'anthropic-key', openai: 'openai-key', gemini: 'gemini-key' };
+        const keyNames = { anthropic: 'anthropic-key', openai: 'openai-key', gemini: 'gemini-key', 'github-copilot': 'github-copilot-key' };
         const keyUrls = {
           anthropic: 'https://console.anthropic.com/settings/keys',
           openai: 'https://platform.openai.com/api-keys',
           gemini: 'https://aistudio.google.com/apikey',
+          'github-copilot': 'https://github.com/settings/personal-access-tokens/new',
         };
-        if (secretsBackend === 'keepass') {
+        if (aiProvider === 'github-copilot') {
+          console.log(chalk.bold('\n  GitHub Copilot Setup:\n'));
+          console.log(chalk.dim('  Option A - use gh CLI (no key needed if already logged in):'));
+          console.log(chalk.dim('    gh auth login'));
+          console.log(chalk.dim('\n  Option B - create a GitHub PAT:'));
+          console.log(chalk.dim('    1. Go to: ') + chalk.cyan.underline(keyUrls['github-copilot']));
+          console.log(chalk.dim('    2. Under Permissions -> Account Permissions -> GitHub Copilot -> Read-only'));
+          console.log(chalk.dim('    3. Copy the token'));
+          if (secretsBackend === 'keepass') {
+            console.log(chalk.dim(`    4. In KeePassXC: create entry adoboards/${keyNames['github-copilot']}`));
+            console.log(chalk.dim('       Paste the token as the Password field'));
+          } else if (secretsBackend === 'env') {
+            console.log(chalk.dim('    4. Set: export ADOBOARDS_GITHUB_COPILOT_KEY="your-token"'));
+          }
+          console.log(chalk.dim('\n  Note: if gh CLI is authenticated, Option A is used automatically.\n'));
+        } else if (secretsBackend === 'keepass') {
           console.log(chalk.dim(`  Ensure adoboards/${keyNames[aiProvider]} exists in your KeePass database`));
           console.log(chalk.dim('  Get your API key here: ') + chalk.cyan.underline(keyUrls[aiProvider]));
         }
@@ -240,6 +295,8 @@ export default async function configCommand(opts) {
     console.log(chalk.bold('\nConfiguration saved:'));
     console.log(`  Org:       ${chalk.cyan(config.get('orgUrl'))}`);
     console.log(`  Project:   ${chalk.cyan(config.get('project'))}`);
+    if (config.get('defaultProjectPath')) console.log(`  Project:   ${chalk.cyan(config.get('defaultProjectPath'))}`);
+    if (config.get('userEmail')) console.log(`  Email:     ${chalk.cyan(config.get('userEmail'))}`);
     if (config.get('defaultArea')) console.log(`  Area:      ${chalk.cyan(config.get('defaultArea'))}`);
     console.log(`  Secrets:   ${chalk.cyan(config.get('secretsBackend'))}`);
     if (config.get('keepassDbPath')) console.log(`  KeePass:   ${chalk.cyan(config.get('keepassDbPath'))}`);
