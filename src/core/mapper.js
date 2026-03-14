@@ -5,6 +5,22 @@ import { FIELD_MAP, TYPE_HEADINGS } from '../api/ado.js';
 const TSHIRT_MAP = { 1: 'XS', 3: 'S', 5: 'M', 8: 'L', 13: 'XL' };
 const TSHIRT_REVERSE = { XS: 1, S: 3, M: 5, L: 8, XL: 13 };
 
+// Normalize ADO date to YYYY-MM-DD regardless of format (ISO or M/D/YYYY h:mm AM/PM)
+function parseAdoDate(val) {
+  if (!val) return null;
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
+}
+
+// Normalize user-entered date to ISO 8601 for ADO API (accepts YYYY-MM-DD or M/D/YYYY)
+export function toAdoDate(val) {
+  if (!val) return null;
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
 const TYPE_PREFIX = {
   Epic: 'EPIC',
   Feature: 'FEAT',
@@ -13,7 +29,7 @@ const TYPE_PREFIX = {
   Task: 'TASK',
 };
 
-function slugify(text) {
+export function slugify(text) {
   return text
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -41,6 +57,30 @@ export function adoToFrontmatter(workItem) {
   }
   if (f['Microsoft.VSTS.Common.BusinessValue'] != null) {
     fm.businessValue = f['Microsoft.VSTS.Common.BusinessValue'];
+  }
+  if (f['Microsoft.VSTS.Scheduling.Effort'] != null) {
+    fm.effort = f['Microsoft.VSTS.Scheduling.Effort'];
+  }
+  if (f['Microsoft.VSTS.Common.Priority'] != null) {
+    fm.priority = f['Microsoft.VSTS.Common.Priority'];
+  }
+  if (f['Microsoft.VSTS.Common.Risk']) {
+    fm.risk = f['Microsoft.VSTS.Common.Risk'];
+  }
+  if (f['Microsoft.VSTS.Common.Complexity'] != null) {
+    fm.complexity = f['Microsoft.VSTS.Common.Complexity'];
+  }
+  if (f['Microsoft.VSTS.Common.TimeCriticality'] != null) {
+    fm.timeCriticality = f['Microsoft.VSTS.Common.TimeCriticality'];
+  }
+  if (f['Microsoft.VSTS.Scheduling.StartDate']) {
+    fm.startDate = parseAdoDate(f['Microsoft.VSTS.Scheduling.StartDate']);
+  }
+  if (f['Microsoft.VSTS.Scheduling.TargetDate']) {
+    fm.targetDate = parseAdoDate(f['Microsoft.VSTS.Scheduling.TargetDate']);
+  }
+  if (f['Microsoft.VSTS.Scheduling.FinishDate']) {
+    fm.finishDate = parseAdoDate(f['Microsoft.VSTS.Scheduling.FinishDate']);
   }
   if (f['System.AssignedTo']?.uniqueName) {
     fm.assignee = f['System.AssignedTo'].uniqueName;
@@ -106,7 +146,15 @@ export function markdownToFields(filePath) {
   if (data.iteration) fields.iteration = data.iteration;
   if (data.assignee) fields.assignee = data.assignee;
   if (data.storyPoints != null) fields.storyPoints = data.storyPoints;
+  if (data.effort != null) fields.effort = data.effort;
+  if (data.priority != null) fields.priority = data.priority;
   if (data.businessValue != null) fields.businessValue = data.businessValue;
+  if (data.timeCriticality != null) fields.timeCriticality = data.timeCriticality;
+  if (data.complexity != null) fields.complexity = data.complexity;
+  if (data.risk) fields.risk = data.risk;
+  if (data.startDate) fields.startDate = toAdoDate(data.startDate);
+  if (data.targetDate) fields.targetDate = toAdoDate(data.targetDate);
+  if (data.finishDate) fields.finishDate = toAdoDate(data.finishDate);
   if (data.tags?.length) fields.tags = data.tags.join('; ');
 
   // Parse body into separate ADO fields by ## headings

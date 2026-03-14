@@ -1,4 +1,5 @@
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import chalk from 'chalk';
 import * as ado from '../api/ado.js';
@@ -75,7 +76,21 @@ export default async function cloneCommand(url, opts = {}) {
     process.exit(1);
   }
 
-  const { orgUrl, project } = parseAdoUrl(url);
+  // Resolve URL: CLI arg takes priority, then build from global config
+  let resolvedUrl = url;
+  if (!resolvedUrl) {
+    const cfgOrgUrl = globalConfig.get('orgUrl');
+    const cfgProject = globalConfig.get('project');
+    if (!cfgOrgUrl || !cfgProject) {
+      console.error(chalk.red('No URL provided and no orgUrl/project found in config.'));
+      console.error(chalk.yellow('  Run: adoboards config'));
+      console.error(chalk.yellow('  Or:  adoboards clone https://dev.azure.com/org/project'));
+      process.exit(1);
+    }
+    resolvedUrl = `${cfgOrgUrl.replace(/\/$/, '')}/${encodeURIComponent(cfgProject)}`;
+  }
+
+  const { orgUrl, project } = parseAdoUrl(resolvedUrl);
   const targetDir = project;
 
   if (existsSync(targetDir)) {
@@ -90,8 +105,11 @@ export default async function cloneCommand(url, opts = {}) {
     ? opts.assignee.split(',').map((a) => a.trim())
     : null;
 
+  // Resolve effective area: CLI flag takes priority, then global config default
+  const effectiveArea = opts.area || globalConfig.get('defaultArea') || null;
+
   const filters = [];
-  if (opts.area) filters.push(`area: ${opts.area}`);
+  if (effectiveArea) filters.push(`area: ${effectiveArea}`);
   if (since) filters.push(`since: ${since}`);
   if (!opts.all) filters.push('states: New/Active/Resolved');
   if (assignees) filters.push(`assignee: ${assignees.join(', ')}`);
@@ -123,7 +141,7 @@ export default async function cloneCommand(url, opts = {}) {
   // ADO's UNDER operator fetches the area AND all children at any depth
   process.stdout.write('  Fetching work items... ');
   const workItems = await ado.getAllWorkItems(orgUrl, project, {
-    area: opts.area,
+    area: effectiveArea,
     since,
     states,
     assignees,
@@ -131,8 +149,8 @@ export default async function cloneCommand(url, opts = {}) {
   console.log(chalk.green(`${workItems.length} items`));
 
   if (!workItems.length) {
-    const hint = opts.area
-      ? `\n  No work items found under area: ${opts.area}`
+    const hint = effectiveArea
+      ? `\n  No work items found under area: ${effectiveArea}`
       : '\n  No work items found in this project.';
     console.log(chalk.yellow(hint));
     mkdirSync(targetDir, { recursive: true });
@@ -172,6 +190,7 @@ export default async function cloneCommand(url, opts = {}) {
     refs[wi.id] = {
       path: relPath,
       rev: wi.rev,
+      hash: createHash('sha256').update(markdown).digest('hex'),
       fields: wi.fields,
     };
     written++;
@@ -181,7 +200,10 @@ export default async function cloneCommand(url, opts = {}) {
   const allIterationPaths = flattenTree(iterations);
   const iterationFilter = opts.iteration || globalConfig.get('iterationFilter') || '';
   const iterationPaths = iterationFilter
-    ? allIterationPaths.filter((p) => p.startsWith(iterationFilter) || iterationFilter.startsWith(p))
+    ? allIterationPaths.filter((p) => {
+        const rel = p.startsWith(project + '\\') ? p.slice(project.length + 1) : p;
+        return rel.startsWith(iterationFilter) || iterationFilter.startsWith(rel);
+      })
     : allIterationPaths;
 
   if (iterationFilter) {
@@ -189,15 +211,39 @@ export default async function cloneCommand(url, opts = {}) {
   }
 
   const currentYear = new Date().getFullYear();
-  const areaPaths = workItems.length
-    ? [...new Set(workItems.map((wi) => {
-        const ap = wi.fields['System.AreaPath'] || project;
-        const rel = ap.startsWith(project + '\\')
-          ? ap.slice(project.length + 1).replace(/\\/g, '/')
-          : ap.replace(/\\/g, '/');
-        return rel ? `areas/${rel}` : 'areas';
-      }))]
-    : ['areas'];
+
+  // Build area paths for iteration folder creation:
+  // - If --area is specified: use the classification nodes to get that subtree in full
+  //   (ensures all sub-areas get sprint folders even if no items were fetched for them)
+  // - Otherwise: derive from fetched work items only (already scoped by assignee/area filters)
+  //   to avoid creating thousands of folders for the entire company's area hierarchy.
+  let areaPaths;
+  if (effectiveArea) {
+    const areaFilterNorm = effectiveArea.startsWith(project + '\\')
+      ? effectiveArea.slice(project.length + 1).replace(/\\/g, '/')
+      : effectiveArea.replace(/\\/g, '/');
+    const allAreaPaths = flattenTree(areas).map((ap) => {
+      if (ap === project) return 'areas';
+      const rel = ap.startsWith(project + '\\')
+        ? ap.slice(project.length + 1).replace(/\\/g, '/')
+        : ap.replace(/\\/g, '/');
+      return rel ? `areas/${rel}` : 'areas';
+    });
+    areaPaths = allAreaPaths.filter(
+      (p) => p === `areas/${areaFilterNorm}` || p.startsWith(`areas/${areaFilterNorm}/`),
+    );
+    if (!areaPaths.length) areaPaths = [`areas/${areaFilterNorm}`];
+  } else {
+    areaPaths = workItems.length
+      ? [...new Set(workItems.map((wi) => {
+          const ap = wi.fields['System.AreaPath'] || project;
+          const rel = ap.startsWith(project + '\\')
+            ? ap.slice(project.length + 1).replace(/\\/g, '/')
+            : ap.replace(/\\/g, '/');
+          return rel ? `areas/${rel}` : 'areas';
+        }))]
+      : ['areas'];
+  }
 
   for (const areaDir of areaPaths) {
     for (const iterPath of iterationPaths) {
@@ -229,7 +275,7 @@ export default async function cloneCommand(url, opts = {}) {
     areas: flattenTree(areas),
     iterations: iterationPaths,
   };
-  if (opts.area) cloneConfig.areaFilter = opts.area;
+  if (effectiveArea) cloneConfig.areaFilter = effectiveArea;
   if (since) cloneConfig.sinceFilter = since;
   if (!opts.all) cloneConfig.stateFilter = ['New', 'Active', 'Resolved'];
   if (assignees) cloneConfig.assigneeFilter = assignees;
@@ -237,6 +283,9 @@ export default async function cloneCommand(url, opts = {}) {
   if (iterationFilter) cloneConfig.iterationFilter = iterationFilter;
   if (globalConfig.get('allowFolderEdits')) cloneConfig.allowFolderEdits = true;
   writeConfig(targetDir, cloneConfig);
+
+  // Save userEmail globally so gen/optimize work from anywhere
+  if (userEmail) globalConfig.set('userEmail', userEmail);
 
   writeRefs(targetDir, refs);
 

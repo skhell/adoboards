@@ -82,7 +82,7 @@ function findCurrentSprint(items, config) {
   const iterationCounts = {};
   for (const item of items) {
     if (!item.iteration || !item.iteration.trim()) continue;
-    if (item.state === 'Active' || item.state === 'New') {
+    if (item.state === 'Active' || item.state === 'Committed' || item.state === 'New') {
       iterationCounts[item.iteration] = (iterationCounts[item.iteration] || 0) + 1;
     }
   }
@@ -111,8 +111,10 @@ function printSprintReport(items, sprint, projectName) {
   }
 
   const totalPoints = stories.reduce((sum, s) => sum + (s.storyPoints || 0), 0);
-  const donePoints = (byState['Closed'] || []).reduce((sum, s) => sum + (s.storyPoints || 0), 0)
-    + (byState['Resolved'] || []).reduce((sum, s) => sum + (s.storyPoints || 0), 0);
+  const closedPoints = (byState['Closed'] || []).reduce((sum, s) => sum + (s.storyPoints || 0), 0);
+  const resolvedPoints = (byState['Resolved'] || []).reduce((sum, s) => sum + (s.storyPoints || 0), 0);
+  const donePoints = closedPoints + resolvedPoints;
+  const committedPoints = (byState['Committed'] || []).reduce((sum, s) => sum + (s.storyPoints || 0), 0);
   const activePoints = (byState['Active'] || []).reduce((sum, s) => sum + (s.storyPoints || 0), 0);
   const newPoints = (byState['New'] || []).reduce((sum, s) => sum + (s.storyPoints || 0), 0);
 
@@ -129,16 +131,16 @@ function printSprintReport(items, sprint, projectName) {
   console.log(chalk.dim(`  ${donePoints}/${totalPoints} story points completed\n`));
 
   console.log(chalk.bold('  Summary'));
-  console.log(`  ${chalk.green('Done:    ')} ${(byState['Closed'] || []).length + (byState['Resolved'] || []).length} items (${donePoints} pts)`);
-  console.log(`  ${chalk.yellow('Active:  ')} ${(byState['Active'] || []).length} items (${activePoints} pts)`);
-  console.log(`  ${chalk.cyan('New:     ')} ${(byState['New'] || []).length} items (${newPoints} pts)`);
-  if (byState['Removed']?.length) {
-    console.log(`  ${chalk.red('Removed: ')} ${byState['Removed'].length} items`);
-  }
+  if ((byState['Closed'] || []).length) console.log(`  ${chalk.green('Closed:    ')} ${(byState['Closed'] || []).length} items (${closedPoints} pts)`);
+  if ((byState['Resolved'] || []).length) console.log(`  ${chalk.green('Resolved:  ')} ${(byState['Resolved'] || []).length} items (${resolvedPoints} pts)`);
+  if ((byState['Active'] || []).length) console.log(`  ${chalk.yellow('Active:    ')} ${(byState['Active'] || []).length} items (${activePoints} pts)`);
+  if ((byState['Committed'] || []).length) console.log(`  ${chalk.yellow('Committed: ')} ${(byState['Committed'] || []).length} items (${committedPoints} pts)`);
+  if ((byState['New'] || []).length) console.log(`  ${chalk.cyan('New:       ')} ${(byState['New'] || []).length} items (${newPoints} pts)`);
+  if (byState['Removed']?.length) console.log(`  ${chalk.red('Removed:   ')} ${byState['Removed'].length} items`);
   console.log();
 
-  const stateOrder = ['Active', 'New', 'Resolved', 'Closed', 'Removed'];
-  const stateColors = { Active: chalk.yellow, New: chalk.cyan, Resolved: chalk.green, Closed: chalk.green, Removed: chalk.red };
+  const stateOrder = ['Active', 'Committed', 'New', 'Resolved', 'Closed', 'Removed'];
+  const stateColors = { Active: chalk.yellow, Committed: chalk.yellow, New: chalk.cyan, Resolved: chalk.green, Closed: chalk.green, Removed: chalk.red };
 
   for (const state of stateOrder) {
     const stateItems = byState[state];
@@ -154,8 +156,9 @@ function printSprintReport(items, sprint, projectName) {
     console.log();
   }
 
-  const noPoints = stories.filter((s) => !s.storyPoints && s.state !== 'Closed' && s.state !== 'Removed');
-  const noAssignee = stories.filter((s) => !s.assignee && s.state !== 'Closed' && s.state !== 'Removed');
+  const DONE_STATES = ['Closed', 'Removed'];
+  const noPoints = stories.filter((s) => !s.storyPoints && !DONE_STATES.includes(s.state));
+  const noAssignee = stories.filter((s) => !s.assignee && !DONE_STATES.includes(s.state));
   if (noPoints.length || noAssignee.length) {
     console.log(chalk.bold('  Attention'));
     if (noPoints.length) console.log(chalk.yellow(`  ${noPoints.length} item(s) without story points`));
@@ -175,9 +178,11 @@ function printSprintReport(items, sprint, projectName) {
   md.push(`${bar} ${pctDone}% - ${donePoints}/${totalPoints} story points completed\n`);
   md.push(`| Status | Items | Points |`);
   md.push(`|---|---|---|`);
-  md.push(`| Done | ${(byState['Closed'] || []).length + (byState['Resolved'] || []).length} | ${donePoints} |`);
-  md.push(`| Active | ${(byState['Active'] || []).length} | ${activePoints} |`);
-  md.push(`| New | ${(byState['New'] || []).length} | ${newPoints} |`);
+  if ((byState['Closed'] || []).length) md.push(`| Closed | ${(byState['Closed'] || []).length} | ${closedPoints} |`);
+  if ((byState['Resolved'] || []).length) md.push(`| Resolved | ${(byState['Resolved'] || []).length} | ${resolvedPoints} |`);
+  if ((byState['Active'] || []).length) md.push(`| Active | ${(byState['Active'] || []).length} | ${activePoints} |`);
+  if ((byState['Committed'] || []).length) md.push(`| Committed | ${(byState['Committed'] || []).length} | ${committedPoints} |`);
+  if ((byState['New'] || []).length) md.push(`| New | ${(byState['New'] || []).length} | ${newPoints} |`);
   if (byState['Removed']?.length) md.push(`| Removed | ${byState['Removed'].length} | - |`);
   md.push('');
 

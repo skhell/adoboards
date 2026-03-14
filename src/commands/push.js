@@ -1,10 +1,11 @@
-import { readFileSync, writeFileSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { join, relative, resolve, dirname, basename } from 'node:path';
 import chalk from 'chalk';
 import matter from 'gray-matter';
 import * as ado from '../api/ado.js';
 import { readRefs, writeRefs, readStaged, writeStaged, readConfig, findProjectRoot } from '../core/state.js';
-import { markdownToFields, validateHeadings } from '../core/mapper.js';
+import { markdownToFields, validateHeadings, slugify } from '../core/mapper.js';
 
 export default async function pushCommand(file) {
   const root = findProjectRoot('.');
@@ -41,7 +42,7 @@ export default async function pushCommand(file) {
       continue;
     }
 
-    // Validate frontmatter — must have id and type to be a work item
+    // Validate frontmatter - must have id and type to be a work item
     try {
       const absPath = join(root, filePath);
       const content = readFileSync(absPath, 'utf-8');
@@ -100,7 +101,7 @@ export default async function pushCommand(file) {
 
   if (skipped.length) {
     console.log(chalk.yellow(`\n  Skipped ${skipped.length} file${skipped.length !== 1 ? 's' : ''}:`));
-    for (const s of skipped) console.log(chalk.dim(`    ${s.path} — ${s.reason}`));
+    for (const s of skipped) console.log(chalk.dim(`    ${s.path} - ${s.reason}`));
   }
 
   if (!validFiles.length) {
@@ -143,6 +144,21 @@ export default async function pushCommand(file) {
 
   console.log(chalk.bold(`\n  Pushing ${validFiles.length} item${validFiles.length !== 1 ? 's' : ''} to ADO...\n`));
 
+  // Sort pending items by type so parents are created before children:
+  // Epic -> Feature -> Story/Bug/Task (already-tracked items keep original order)
+  const TYPE_ORDER = { Epic: 0, Feature: 1, Story: 2, Bug: 2, Task: 2, Issue: 2 };
+  validFiles.sort((a, b) => {
+    const pa = markdownToFields(join(root, a));
+    const pb = markdownToFields(join(root, b));
+    const oa = pa.id === 'pending' ? (TYPE_ORDER[pa.type] ?? 3) : -1;
+    const ob = pb.id === 'pending' ? (TYPE_ORDER[pb.type] ?? 3) : -1;
+    return oa - ob;
+  });
+
+  // Track newly created IDs so child items can resolve placeholder parents
+  const createdFeatureIds = []; // ordered list of feature IDs created in this push
+  const createdIdByType = new Map(); // last created id per type (for EPIC placeholder)
+
   let created = 0;
   let updated = 0;
   let errors = 0;
@@ -150,16 +166,42 @@ export default async function pushCommand(file) {
   for (const filePath of validFiles) {
     try {
       const parsed = markdownToFields(join(root, filePath));
-      const { id, type, fields, parent } = parsed;
+      const { id, type, fields } = parsed;
+      let { parent } = parsed;
 
       // Map short type names back to ADO types
       const adoType = type === 'Story' ? 'User Story' : type;
 
       if (id === 'pending') {
+        // Resolve placeholder parents (FEAT, EPIC, FEAT-1, FEAT-2, etc.) to real ADO IDs
+        if (parent) {
+          const parentStr = String(parent).trim();
+
+          if (/^FEAT(-\d+)?$/i.test(parentStr)) {
+            // FEAT or FEAT-1 -> index into features created in this push (1-based, FEAT = index 0)
+            const match = parentStr.match(/^FEAT-(\d+)$/i);
+            const idx = match ? parseInt(match[1], 10) - 1 : 0;
+            const resolvedId = createdFeatureIds[idx];
+            if (resolvedId) {
+              parent = resolvedId;
+            } else {
+              console.log(chalk.yellow(`  Warning: could not resolve parent ${parentStr} for ${filePath} - push the feature first`));
+              parent = null;
+            }
+          } else if (/^EPIC$/i.test(parentStr)) {
+            const resolvedId = createdIdByType.get('Epic');
+            if (resolvedId) {
+              parent = resolvedId;
+            } else {
+              console.log(chalk.yellow(`  Warning: could not resolve parent EPIC for ${filePath} - push the epic first`));
+              parent = null;
+            }
+          }
+        }
+
         // Create new work item
         process.stdout.write(`  Creating ${adoType}: ${fields.title}... `);
 
-        // Add parent link if specified
         const createFields = { ...fields };
 
         const result = await ado.createWorkItem(adoType, createFields, config.orgUrl, config.project);
@@ -170,15 +212,48 @@ export default async function pushCommand(file) {
         const updated_content = fileContent.replace(/^id:\s*pending$/m, `id: ${newId}`);
         writeFileSync(join(root, filePath), updated_content, 'utf-8');
 
+        // Rename pending folder or file to real ID (e.g. FEAT-pending-slug -> FEAT-XXXXXXX-slug)
+        let finalFilePath = filePath;
+        const absFilePath = join(root, filePath);
+        const folderName = basename(dirname(absFilePath));
+
+        if (folderName.includes('-pending-')) {
+          // Folder-based item (Epic, Feature): rename the folder
+          const newFolderName = folderName.replace('-pending-', `-${newId}-`);
+          const oldFolderAbs = dirname(absFilePath);
+          const newFolderAbs = join(dirname(oldFolderAbs), newFolderName);
+          try {
+            renameSync(oldFolderAbs, newFolderAbs);
+            finalFilePath = join(relative(root, newFolderAbs), basename(filePath));
+            const stagedNow = readStaged(root);
+            writeStaged(root, stagedNow.map(s => s === filePath ? finalFilePath : s));
+          } catch { /* non-fatal */ }
+        } else if (basename(filePath).includes('-pending-')) {
+          // Flat file item (Story, Bug, Task): rename the file
+          const newFileName = basename(filePath).replace('-pending-', `-${newId}-`);
+          const newAbsFilePath = join(dirname(absFilePath), newFileName);
+          try {
+            renameSync(absFilePath, newAbsFilePath);
+            finalFilePath = relative(root, newAbsFilePath);
+            const stagedNow = readStaged(root);
+            writeStaged(root, stagedNow.map(s => s === filePath ? finalFilePath : s));
+          } catch { /* non-fatal */ }
+        }
+
         // Add parent relation if specified
         if (parent) {
           await addParentLink(newId, parent, config.orgUrl, config.project);
         }
 
-        // Update refs
+        // Track created ID for child resolution
+        if (type === 'Feature') createdFeatureIds.push(newId);
+        createdIdByType.set(type, newId);
+
+        // Update refs with final path
         refs[newId] = {
-          path: filePath,
+          path: finalFilePath,
           rev: result.rev,
+          hash: createHash('sha256').update(updated_content).digest('hex'),
           fields: result.fields,
         };
 
@@ -193,25 +268,71 @@ export default async function pushCommand(file) {
           const adoField = ado.FIELD_MAP[key] || key;
           const refValue = ref?.fields?.[adoField];
 
-          // Compare values, handling type differences
-          if (String(value) !== String(refValue ?? '')) {
+          // Rich-text fields: always include if present - refs store HTML, file has markdown,
+          // so string comparison would always differ anyway; being explicit avoids skipping
+          if (['description', 'acceptanceCriteria', 'reproSteps', 'systemInfo'].includes(key)) {
+            if (value != null && value !== '') changedFields[key] = value;
+          } else if (String(value) !== String(refValue ?? '')) {
             changedFields[key] = value;
           }
         }
 
-        if (Object.keys(changedFields).length === 0) {
+        const hasParentToLink = parsed.parent && !isNaN(Number(parsed.parent));
+
+        if (Object.keys(changedFields).length === 0 && !hasParentToLink) {
           console.log(chalk.dim(`  Skipped ${filePath} (no changes)`));
           continue;
         }
 
-        process.stdout.write(`  Updating ID ${id}: ${Object.keys(changedFields).join(', ')}... `);
-        const result = await ado.updateWorkItem(id, changedFields, config.orgUrl, config.project);
+        let result;
+        if (Object.keys(changedFields).length > 0) {
+          process.stdout.write(`  Updating ID ${id}: ${Object.keys(changedFields).join(', ')}... `);
+          result = await ado.updateWorkItem(id, changedFields, config.orgUrl, config.project);
+        } else {
+          process.stdout.write(`  Linking parent for ID ${id}... `);
+          result = ref; // no field update needed, use existing ref
+        }
+
+        // Link parent relation if set (ADO stores this as a relation, not a field)
+        // addParentLink ignores "already linked" errors silently
+        if (hasParentToLink) {
+          await addParentLink(id, parsed.parent, config.orgUrl, config.project);
+        }
+
+        // Read back the file content to hash what's actually on disk
+        const pushedContent = readFileSync(join(root, filePath), 'utf-8');
+
+        // Rename pending folder/file if it was never renamed (pushed before 0.3.35)
+        let finalUpdatePath = filePath;
+        const absUpdatePath = join(root, filePath);
+        const updateFolderName = basename(dirname(absUpdatePath));
+        if (updateFolderName.includes('-pending-')) {
+          const newFolderName = updateFolderName.replace('-pending-', `-${id}-`);
+          const oldFolderAbs = dirname(absUpdatePath);
+          const newFolderAbs = join(dirname(oldFolderAbs), newFolderName);
+          try {
+            renameSync(oldFolderAbs, newFolderAbs);
+            finalUpdatePath = join(relative(root, newFolderAbs), basename(filePath));
+            const stagedNow = readStaged(root);
+            writeStaged(root, stagedNow.map(s => s === filePath ? finalUpdatePath : s));
+          } catch { /* non-fatal */ }
+        } else if (basename(filePath).includes('-pending-')) {
+          const newFileName = basename(filePath).replace('-pending-', `-${id}-`);
+          const newAbsPath = join(dirname(absUpdatePath), newFileName);
+          try {
+            renameSync(absUpdatePath, newAbsPath);
+            finalUpdatePath = relative(root, newAbsPath);
+            const stagedNow = readStaged(root);
+            writeStaged(root, stagedNow.map(s => s === filePath ? finalUpdatePath : s));
+          } catch { /* non-fatal */ }
+        }
 
         // Update refs with new state
         refs[id] = {
-          path: filePath,
-          rev: result.rev,
-          fields: result.fields,
+          path: finalUpdatePath,
+          rev: result?.rev ?? ref?.rev,
+          hash: createHash('sha256').update(pushedContent).digest('hex'),
+          fields: result?.fields ?? ref?.fields,
         };
 
         console.log(chalk.green('done'));
@@ -332,9 +453,6 @@ function levenshtein(a, b) {
 
 async function addParentLink(childId, parentId, orgUrl, project) {
   try {
-    await ado.updateWorkItem(childId, {}, orgUrl, project);
-    // Parent linking uses a relation, not a field patch
-    // We need a special patch operation for this
     const axios = (await import('axios')).default;
     const secrets = await import('../core/secrets.js');
     const pat = await secrets.get('ado-pat');
@@ -342,7 +460,8 @@ async function addParentLink(childId, parentId, orgUrl, project) {
       'Authorization': `Basic ${Buffer.from(':' + pat).toString('base64')}`,
       'Content-Type': 'application/json-patch+json',
     };
-    const parentUrl = `${orgUrl}/${encodeURIComponent(project)}/_apis/wit/workitems/${parentId}`;
+    // ADO relation URLs require 'workItems' (capital I) - lowercase silently fails
+    const parentUrl = `${orgUrl}/${encodeURIComponent(project)}/_apis/wit/workItems/${parentId}`;
     await axios.patch(
       `${orgUrl}/${encodeURIComponent(project)}/_apis/wit/workitems/${childId}?api-version=7.1`,
       [{
@@ -355,7 +474,11 @@ async function addParentLink(childId, parentId, orgUrl, project) {
       }],
       { headers },
     );
-  } catch {
-    // Parent link failed - non-fatal, item was still created
+  } catch (err) {
+    const msg = err.response?.data?.message || err.message || '';
+    // "already exists" or "duplicate" is not a real error - ignore
+    if (!msg.toLowerCase().includes('already') && !msg.toLowerCase().includes('duplicate')) {
+      console.log(chalk.yellow(`  Warning: could not link parent ${parentId} -> ${childId}: ${msg}`));
+    }
   }
 }

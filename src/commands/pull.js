@@ -1,12 +1,15 @@
 import { writeFileSync, existsSync, readFileSync, mkdirSync, unlinkSync, readdirSync, statSync, rmdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join, relative } from 'node:path';
 import chalk from 'chalk';
 import matter from 'gray-matter';
 import * as ado from '../api/ado.js';
+import globalConfig from '../core/config.js';
 import { readConfig, writeConfig, readRefs, writeRefs, readStaged, findProjectRoot } from '../core/state.js';
 import { adoToMarkdown, workItemFileName, workItemDirPath, buildParentMap } from '../core/mapper.js';
 
-export default async function pullCommand() {
+export default async function pullCommand(opts = {}) {
+  const force = opts.force || false;
   const root = findProjectRoot('.');
   if (!root) {
     console.error(chalk.red('Not an adoboards project. Run adoboards clone first.'));
@@ -20,13 +23,17 @@ export default async function pullCommand() {
   // Warn if there are staged changes that haven't been pushed
   const staged = readStaged(root);
   if (staged.length) {
-    console.log(chalk.yellow(`\n  Warning: ${staged.length} staged file${staged.length !== 1 ? 's' : ''} not yet pushed.`));
-    console.log(chalk.yellow('  Pull may overwrite local changes. Push first or unstage to continue.\n'));
-    console.log(chalk.dim('  Staged files:'));
-    for (const s of staged.slice(0, 5)) console.log(chalk.dim(`    ${s}`));
-    if (staged.length > 5) console.log(chalk.dim(`    ... and ${staged.length - 5} more`));
-    console.log();
-    process.exit(1);
+    if (force) {
+      console.log(chalk.yellow(`\n  Warning: ${staged.length} staged file(s) will be discarded (--force).\n`));
+    } else {
+      console.log(chalk.yellow(`\n  Warning: ${staged.length} staged file${staged.length !== 1 ? 's' : ''} not yet pushed.`));
+      console.log(chalk.yellow('  Pull may overwrite local changes. Push first or unstage to continue.\n'));
+      console.log(chalk.dim('  Staged files:'));
+      for (const s of staged.slice(0, 5)) console.log(chalk.dim(`    ${s}`));
+      if (staged.length > 5) console.log(chalk.dim(`    ... and ${staged.length - 5} more`));
+      console.log();
+      process.exit(1);
+    }
   }
 
   console.log(chalk.bold(`\n  Pulling changes from ${config.project}...\n`));
@@ -34,10 +41,24 @@ export default async function pullCommand() {
     console.log(chalk.dim(`  Last sync: ${lastSync}\n`));
   }
 
+  // Refresh userEmail from ADO on every pull - catches company email changes automatically
+  try {
+    const me = await ado.whoAmI(config.orgUrl);
+    if (me.email) {
+      globalConfig.set('userEmail', me.email);
+      if (config.userEmail !== me.email) {
+        config.userEmail = me.email;
+        writeConfig(root, config);
+      }
+    }
+  } catch { /* non-fatal */ }
+
   // Build WIQL to fetch items modified since last sync
+  // Resolve effective area: stored areaFilter takes priority, then global config default
+  const effectiveArea = config.areaFilter || globalConfig.get('defaultArea') || null;
   const queryOpts = {};
-  if (config.areaFilter) queryOpts.area = config.areaFilter;
-  if (lastSync) queryOpts.since = lastSync;
+  if (effectiveArea) queryOpts.area = effectiveArea;
+  if (lastSync && !force) queryOpts.since = lastSync;  // --force fetches ALL items to reset everything
   if (config.stateFilter) queryOpts.states = config.stateFilter;
   if (config.assigneeFilter) queryOpts.assignees = config.assigneeFilter;
 
@@ -46,7 +67,7 @@ export default async function pullCommand() {
   console.log(chalk.green(`${workItems.length} items`));
 
   if (!workItems.length) {
-    console.log(chalk.dim('\n  No changes since last sync.\n'));
+    console.log(chalk.dim(force ? '\n  No items found.\n' : '\n  No changes since last sync.\n'));
     config.lastSync = new Date().toISOString();
     writeConfig(root, config);
     return;
@@ -82,8 +103,8 @@ export default async function pullCommand() {
       const hasRemoteChanges = wi.rev !== ref?.rev;
       const wasMoved = actualPath !== ref?.path;
 
-      if (hasLocalEdits && hasRemoteChanges) {
-        // Conflict: both sides changed
+      if (hasLocalEdits && hasRemoteChanges && !force) {
+        // Conflict: both sides changed - save remote version alongside local
         const conflictBase = actualPath;
         console.log(chalk.yellow(`  Conflict: ${conflictBase} (modified locally and remotely)`));
         const remotePath = conflictBase.replace(/\.md$/, '.remote.md');
@@ -94,14 +115,15 @@ export default async function pullCommand() {
         continue;
       }
 
-      if (hasLocalEdits && !hasRemoteChanges) {
+      if (hasLocalEdits && !hasRemoteChanges && !force) {
         // Only local edits, no remote changes - but file might be moved
         if (wasMoved && actualPath !== correctPath) {
           // Move the file back to where it should be, keep local content edits
           mkdirSync(join(root, correctPath).replace(/\/[^/]+$/, ''), { recursive: true });
           writeFileSync(join(root, correctPath), localContent, 'utf-8');
           removeFileAndCleanup(root, actualPath);
-          refs[id] = { path: correctPath, rev: ref?.rev || wi.rev, fields: ref?.fields || wi.fields };
+          // Keep existing hash so status still shows as modified
+          refs[id] = { path: correctPath, rev: ref?.rev || wi.rev, hash: ref?.hash, fields: ref?.fields || wi.fields, parent: wi.parent };
           console.log(chalk.magenta(`  Moved back: ${actualPath} -> ${correctPath} (local edits kept)`));
           movedBack++;
         }
@@ -119,7 +141,7 @@ export default async function pullCommand() {
         if (actualPath !== correctPath) {
           removeFileAndCleanup(root, actualPath);
         }
-        refs[id] = { path: correctPath, rev: wi.rev, fields: wi.fields };
+        refs[id] = { path: correctPath, rev: wi.rev, hash: createHash('sha256').update(markdown).digest('hex'), fields: wi.fields, parent: wi.parent };
         if (hasRemoteChanges) {
           updatedCount++;
         } else {
@@ -129,7 +151,12 @@ export default async function pullCommand() {
       } else if (hasRemoteChanges) {
         // File in correct place, just update content
         writeFileSync(join(root, actualPath), markdown, 'utf-8');
-        refs[id] = { path: actualPath, rev: wi.rev, fields: wi.fields };
+        refs[id] = { path: actualPath, rev: wi.rev, hash: createHash('sha256').update(markdown).digest('hex'), fields: wi.fields, parent: wi.parent };
+        updatedCount++;
+      } else if (force) {
+        // --force: always overwrite regardless of local edit detection - like git checkout .
+        writeFileSync(join(root, actualPath), markdown, 'utf-8');
+        refs[id] = { path: actualPath, rev: wi.rev, hash: createHash('sha256').update(markdown).digest('hex'), fields: wi.fields, parent: wi.parent };
         updatedCount++;
       }
     } else {
@@ -137,9 +164,79 @@ export default async function pullCommand() {
       mkdirSync(join(root, correctPath).replace(/\/[^/]+$/, ''), { recursive: true });
       const markdown = adoToMarkdown(wi);
       writeFileSync(join(root, correctPath), markdown, 'utf-8');
-      refs[id] = { path: correctPath, rev: wi.rev, fields: wi.fields };
-      newCount++;
+      refs[id] = { path: correctPath, rev: wi.rev, hash: createHash('sha256').update(markdown).digest('hex'), fields: wi.fields, parent: wi.parent };
     }
+  }
+
+  // Refresh iteration folder structure (future sprints may have been added since last clone)
+  process.stdout.write('  Refreshing iteration folders... ');
+  try {
+    const [areas, iterations] = await Promise.all([
+      ado.getAreas(config.orgUrl, config.project),
+      ado.getIterations(config.orgUrl, config.project),
+    ]);
+
+    const project = config.project;
+    const currentYear = new Date().getFullYear();
+    const allIterationPaths = flattenTree(iterations);
+    const iterationFilter = config.iterationFilter || globalConfig.get('iterationFilter') || '';
+    const iterationPaths = iterationFilter
+      ? allIterationPaths.filter((p) => {
+          const rel = p.startsWith(project + '\\') ? p.slice(project.length + 1) : p;
+          return rel.startsWith(iterationFilter) || iterationFilter.startsWith(rel);
+        })
+      : allIterationPaths;
+
+    let areaPaths;
+    if (effectiveArea) {
+      const areaFilterNorm = effectiveArea.startsWith(project + '\\')
+        ? effectiveArea.slice(project.length + 1).replace(/\\/g, '/')
+        : effectiveArea.replace(/\\/g, '/');
+      const allAreaPaths = flattenTree(areas).map((ap) => {
+        if (ap === project) return 'areas';
+        const rel = ap.startsWith(project + '\\')
+          ? ap.slice(project.length + 1).replace(/\\/g, '/')
+          : ap.replace(/\\/g, '/');
+        return rel ? `areas/${rel}` : 'areas';
+      });
+      areaPaths = allAreaPaths.filter(
+        (p) => p === `areas/${areaFilterNorm}` || p.startsWith(`areas/${areaFilterNorm}/`),
+      );
+      if (!areaPaths.length) areaPaths = [`areas/${areaFilterNorm}`];
+    } else {
+      areaPaths = workItems.length
+        ? [...new Set(workItems.map((wi) => {
+            const ap = wi.fields['System.AreaPath'] || project;
+            const rel = ap.startsWith(project + '\\')
+              ? ap.slice(project.length + 1).replace(/\\/g, '/')
+              : ap.replace(/\\/g, '/');
+            return rel ? `areas/${rel}` : 'areas';
+          }))]
+        : ['areas'];
+    }
+
+    for (const areaDir of areaPaths) {
+      for (const iterPath of iterationPaths) {
+        const iterRel = iterPath.startsWith(project + '\\')
+          ? iterPath.slice(project.length + 1).replace(/\\/g, '/')
+          : iterPath.replace(/\\/g, '/');
+        if (!iterRel || iterRel === project) continue;
+
+        const yearMatch = iterRel.match(/(?:^|[^0-9])(?:(?:F?Y)(\d{2})|(20\d{2}))(?:[^0-9]|$)/i);
+        if (yearMatch) {
+          const year = yearMatch[2] ? Number(yearMatch[2]) : 2000 + Number(yearMatch[1]);
+          if (year < currentYear) continue;
+        }
+
+        mkdirSync(join(root, areaDir, 'iterations', iterRel), { recursive: true });
+      }
+    }
+
+    // Update stored iterations list in config
+    config.iterations = iterationPaths;
+    console.log(chalk.green('done'));
+  } catch {
+    console.log(chalk.yellow('skipped (non-fatal)'));
   }
 
   // Update state
@@ -147,12 +244,20 @@ export default async function pullCommand() {
   writeConfig(root, config);
   writeRefs(root, refs);
 
+  // Clear staged index if --force (local edits were discarded)
+  if (force && staged.length) {
+    const { writeStaged } = await import('../core/state.js');
+    writeStaged(root, []);
+    console.log(chalk.dim('  Staged index cleared (--force).'));
+  }
+
   // Summary
   console.log(chalk.bold('\n  Pull complete:'));
   if (updatedCount) console.log(chalk.green(`    Updated:    ${updatedCount}`));
   if (newCount) console.log(chalk.green(`    New:         ${newCount}`));
   if (movedBack) console.log(chalk.magenta(`    Moved back: ${movedBack}`));
   if (conflicts) console.log(chalk.yellow(`    Conflicts:  ${conflicts} (check .remote.md files)`));
+  if (force) console.log(chalk.yellow(`    Forced:     local edits discarded`));
   if (!updatedCount && !newCount && !conflicts && !movedBack) console.log(chalk.dim('    No changes.'));
   console.log();
 }
@@ -323,4 +428,16 @@ function removeFileAndCleanup(root, filePath) {
       break;
     }
   }
+}
+
+function flattenTree(node, prefix = '') {
+  const paths = [];
+  const name = prefix ? `${prefix}\\${node.name}` : node.name;
+  paths.push(name);
+  if (node.children) {
+    for (const child of node.children) {
+      paths.push(...flattenTree(child, name));
+    }
+  }
+  return paths;
 }

@@ -1,8 +1,16 @@
 import axios from 'axios';
+import { marked } from 'marked';
 import config from '../core/config.js';
 import * as secrets from '../core/secrets.js';
 
 const API_VERSION = '7.1';
+
+// ADO rich-text fields expect HTML - convert markdown before sending
+const HTML_FIELDS = new Set(['description', 'acceptanceCriteria', 'reproSteps', 'systemInfo']);
+function mdToHtml(md) {
+  if (!md) return md;
+  return marked.parse(md, { async: false });
+}
 
 export const FIELD_MAP = {
   title: 'System.Title',
@@ -12,7 +20,15 @@ export const FIELD_MAP = {
   assignee: 'System.AssignedTo',
   description: 'System.Description',
   storyPoints: 'Microsoft.VSTS.Scheduling.StoryPoints',
+  effort: 'Microsoft.VSTS.Scheduling.Effort',
+  priority: 'Microsoft.VSTS.Common.Priority',
   businessValue: 'Microsoft.VSTS.Common.BusinessValue',
+  timeCriticality: 'Microsoft.VSTS.Common.TimeCriticality',
+  complexity: 'Microsoft.VSTS.Common.Complexity',
+  risk: 'Microsoft.VSTS.Common.Risk',
+  startDate: 'Microsoft.VSTS.Scheduling.StartDate',
+  targetDate: 'Microsoft.VSTS.Scheduling.TargetDate',
+  finishDate: 'Microsoft.VSTS.Scheduling.FinishDate',
   acceptanceCriteria: 'Microsoft.VSTS.Common.AcceptanceCriteria',
   reproSteps: 'Microsoft.VSTS.TCM.ReproSteps',
   systemInfo: 'Microsoft.VSTS.TCM.SystemInfo',
@@ -125,7 +141,7 @@ export async function createWorkItem(type, fields, orgUrl, project) {
   const patchDoc = Object.entries(fields).map(([key, value]) => ({
     op: 'add',
     path: `/fields/${FIELD_MAP[key] || key}`,
-    value,
+    value: HTML_FIELDS.has(key) ? mdToHtml(value) : value,
   }));
 
   const res = await axios.post(url, patchDoc, {
@@ -143,7 +159,7 @@ export async function updateWorkItem(id, fields, orgUrl, project) {
   const patchDoc = Object.entries(fields).map(([key, value]) => ({
     op: 'add',
     path: `/fields/${FIELD_MAP[key] || key}`,
-    value,
+    value: HTML_FIELDS.has(key) ? mdToHtml(value) : value,
   }));
 
   const res = await axios.patch(url, patchDoc, {
