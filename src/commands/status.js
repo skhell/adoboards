@@ -1,9 +1,12 @@
 import { readdirSync, statSync, readFileSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join, relative } from 'node:path';
 import chalk from 'chalk';
-import Table from 'cli-table3';
 import matter from 'gray-matter';
 import { readRefs, readStaged, readConfig, findProjectRoot } from '../core/state.js';
+
+// Quote path for shell copy-paste if it contains spaces
+const q = (p) => p.includes(' ') ? `"${p}"` : p;
 
 export default function statusCommand() {
   const root = findProjectRoot('.');
@@ -52,7 +55,7 @@ export default function statusCommand() {
         const content = readFileSync(join(root, filePath), 'utf-8');
         const { data } = matter(content);
         if (data.id === 'pending') {
-          pending.push(filePath);
+          if (!staged.has(filePath)) pending.push(filePath);
         } else if (data.id != null && refs[data.id]) {
           // File has a tracked ID but at a different path - it was moved
           const ref = refs[data.id];
@@ -66,15 +69,18 @@ export default function statusCommand() {
       continue;
     }
 
-    // Check if modified by comparing frontmatter fields
+    // Check if modified - hash first (catches any change), fall back to semantic
     try {
       const content = readFileSync(join(root, filePath), 'utf-8');
-      const { data } = matter(content);
       const ref = refs[id];
-      const refFields = ref.fields;
+      const currentHash = createHash('sha256').update(content).digest('hex');
 
-      if (hasChanges(data, content, refFields)) {
-        modified.push({ path: filePath, id });
+      if (ref.hash) {
+        if (currentHash !== ref.hash) modified.push({ path: filePath, id });
+      } else {
+        // No stored hash (old clone) - fall back to semantic field comparison
+        const { data } = matter(content);
+        if (hasChanges(data, content, ref.fields)) modified.push({ path: filePath, id });
       }
     } catch {
       // File might be corrupted, skip
@@ -98,62 +104,78 @@ export default function statusCommand() {
     }
   }
 
-  // Output
-  console.log(chalk.bold(`\n  ${config.project} - status\n`));
-
-  const rows = [];
-
-  for (const f of stagedList) {
-    rows.push([chalk.green('staged'), chalk.green(f), chalk.dim('-')]);
-  }
-  for (const m of modified) {
-    rows.push([chalk.yellow('modified'), chalk.yellow(m.path), chalk.yellow(m.id)]);
-  }
-  for (const p of pending) {
-    rows.push([chalk.cyan('new'), chalk.cyan(p), chalk.cyan('pending')]);
-  }
-  for (const m of moved) {
-    const label = m.alsoModified ? 'moved + modified' : 'moved';
-    rows.push([chalk.magenta(label), chalk.magenta(m.path), chalk.magenta(m.id)]);
-  }
-  for (const d of deleted) {
-    rows.push([chalk.red('deleted'), chalk.red(d.path), chalk.red(d.id)]);
-  }
-
   // Check for renamed structural folders
   const folderWarnings = checkStructuralFolders(root);
-  for (const w of folderWarnings) {
-    rows.push([chalk.red('warning'), chalk.red(w.path), chalk.red(w.issue)]);
-  }
 
-  if (!rows.length) {
-    console.log(chalk.dim('  Nothing changed.\n'));
+  // Output - git style
+  const projectLabel = config.project ? chalk.bold(config.project) : chalk.bold('adoboards');
+  console.log(`\n${projectLabel} · ${chalk.dim(config.orgUrl || '')}\n`);
+
+  const totalChanges = stagedList.length + modified.length + pending.length + moved.length + deleted.length;
+
+  if (!totalChanges && !folderWarnings.length) {
+    console.log(chalk.dim('  Nothing to commit, working tree is clean.\n'));
     return;
   }
 
-  const table = new Table({
-    head: [chalk.bold('Status'), chalk.bold('File'), chalk.bold('ID')],
-    style: { head: [], border: [], 'padding-left': 1, 'padding-right': 1 },
-    chars: {
-      top: '-', 'top-mid': '+', 'top-left': '  +', 'top-right': '+',
-      bottom: '-', 'bottom-mid': '+', 'bottom-left': '  +', 'bottom-right': '+',
-      left: '  |', 'left-mid': '  +', mid: '-', 'mid-mid': '+',
-      right: '|', 'right-mid': '+', middle: '|',
-    },
-  });
-
-  for (const row of rows) table.push(row);
-  console.log(table.toString());
-
-  if (moved.length) {
-    console.log(chalk.magenta('\n  Moved files:'));
-    for (const m of moved) {
-      console.log(chalk.dim(`    ${m.oldPath}`));
-      console.log(chalk.magenta(`    -> ${m.path}`));
-    }
-    console.log(chalk.dim('\n  Tip: use "adoboards add" then "adoboards push" to update refs.'));
+  // Helper to print a section
+  function printSection(label, color, items, formatLine) {
+    if (!items.length) return;
+    console.log(color(`${label}:`));
+    for (const item of items) console.log('  ' + formatLine(item));
+    console.log();
   }
 
+  // Staged
+  printSection('Changes staged for push', chalk.green, stagedList, (f) =>
+    chalk.green(`staged:    ${q(f)}`)
+  );
+
+  // Modified
+  printSection('Changes not staged for push', chalk.yellow, modified, (m) =>
+    chalk.yellow(`modified:  ${q(m.path)}`) + chalk.dim(`  #${m.id}`)
+  );
+
+  // New (pending)
+  if (pending.length) {
+    console.log(chalk.cyan('New work items (pending push):'));
+    console.log(chalk.dim('  (use "adoboards add <file>" to stage, "adoboards push" to create in ADO)\n'));
+    for (const f of pending) console.log('  ' + chalk.cyan(`new file:  ${q(f)}`));
+    console.log();
+  }
+
+  // Moved
+  if (moved.length) {
+    console.log(chalk.magenta('Moved work items:'));
+    for (const m of moved) {
+      const label = m.alsoModified ? 'moved+mod: ' : 'moved:     ';
+      console.log('  ' + chalk.magenta(`${label}${q(m.path)}`) + chalk.dim(`  #${m.id}`));
+      console.log('  ' + chalk.dim(`           (was: ${q(m.oldPath)})`));
+    }
+    console.log();
+  }
+
+  // Deleted
+  printSection('Deleted work items:', chalk.red, deleted, (d) =>
+    chalk.red(`deleted:   ${q(d.path)}`) + chalk.dim(`  #${d.id}`)
+  );
+
+  // Folder warnings
+  if (folderWarnings.length) {
+    console.log(chalk.red('Structural warnings:'));
+    for (const w of folderWarnings) console.log('  ' + chalk.red(`warning:   ${q(w.path)}`) + chalk.dim(`  (${w.issue})`));
+    console.log();
+  }
+
+  // Summary line
+  const parts = [];
+  if (stagedList.length)  parts.push(chalk.green(`${stagedList.length} staged`));
+  if (modified.length)    parts.push(chalk.yellow(`${modified.length} modified`));
+  if (pending.length)     parts.push(chalk.cyan(`${pending.length} new`));
+  if (moved.length)       parts.push(chalk.magenta(`${moved.length} moved`));
+  if (deleted.length)     parts.push(chalk.red(`${deleted.length} deleted`));
+  console.log(chalk.dim('─'.repeat(50)));
+  console.log(parts.join(chalk.dim('  ·  ')));
   console.log();
 }
 
