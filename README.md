@@ -88,7 +88,7 @@ It will ask for:
 4. **Default project path** - where `gen` saves items when no `--project` flag is given
 5. **Secrets backend** KeePass (recommended), OS keychain, or local env vars
 6. Path to your **`.kdbx` file** (if using KeePass)
-7. Your preferred **AI provider** (optional - skip if you don't have API or Github Copilot access)
+7. Your preferred **AI provider** (optional - skip if you don't have API access)
 8. **AI persona** describe your role/title and what your team does - will be used by AI prompt to write in your domain language
 9. **Team capacity** team size, velocity per person, sprint length
 10. **Reports directory** where sprint reports are saved (default: `~/Downloads/adoreports/`)
@@ -466,8 +466,7 @@ adoboards push            # Push staged changes to Azure DevOps
 ```
 
 > [!NOTE]
-> If your path contains spaces, wrap it in quotes:
-
+> If your path contains spaces, wrap it in quotes
 ```bash
 adoboards add "areas/project/subproject name with space/backlog/STORY-pending-my-story.md"
 ```
@@ -580,10 +579,19 @@ Push respects hierarchy order automatically - Epics are created before Features,
 Already have stories but they're vague, missing acceptance criteria, or have nonsensical t-shirt sizes?
 
 ```bash
-adoboards optimize areas/YourTeam/    # Optimize everything under an area
-adoboards optimize story.md           # Optimize a single file
-adoboards optimize story.md --apply   # Skip the diff preview, just do it
+adoboards optimize 1234              # Optimize a single story, bug, or task by ID
+adoboards optimize 1234              # Optimize a feature + all connected stories (prompts Y/N)
+adoboards optimize 1234              # Optimize an epic + all features + stories (prompts Y/N)
+adoboards optimize areas/YourTeam/   # Optimize everything under an area path
+adoboards optimize story.md          # Optimize a single file
 ```
+
+Target by **work item ID** and the command automatically resolves the hierarchy:
+- **Story / Bug / Task** - optimizes that item directly, no prompt
+- **Feature** - optimizes the feature and all connected stories; asks `[Y/n]` before touching child items
+- **Epic** - optimizes the epic, all child features, and all their stories; asks `[Y/n]` before proceeding
+
+Changes are written to files immediately. Acceptance criteria are formatted as `- [ ]` checkboxes (compatible with GitHub and Azure DevOps markdown).
 
 AI rewrites descriptions, acceptance criteria, business value justification, and t-shirt rationale but **never touches your metadata** (IDs, state, assignments, iterations).
 

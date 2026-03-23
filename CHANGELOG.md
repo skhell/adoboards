@@ -7,29 +7,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.3.46] - 2026-03-14
+## [0.3.58] - 2026-03-14
 
 ### Added
-- **GitHub Copilot provider** with `gh auth token` fallback and secret/env support via `github-copilot-key`
-- **`adoboards gen`** now accepts inline text, current-directory files, relative and absolute paths, and `~/.adoboards/gen/YYYY/` idea names; added `--project` and `--assignee`
-- **`adoboards pull --force`** to discard local edits, refetch full remote state, and clear the staged index
-- **`adoboards clone [url]`** command can be executed without url as can now use saved `orgUrl` and `project` when the URL is omitted
+- **`adoboards unstage <files...>`** - new command to remove files from the staging area; `unstage .` clears all staged files
+- **`adoboards gen`** - `--assignee <email>`, `--project <path>` flags; idea argument now accepts absolute paths, `~/` paths, relative paths, or a bare name resolved from `~/.adoboards/gen/YEAR/`; added `github-copilot` as a supported AI provider
+- **`adoboards clone`** - URL is now optional; falls back to `orgUrl` + `project` from config
+- **`adoboards pull`** - `--force` flag exposed in CLI entry point
+- `marked` added as a runtime dependency
 
 ### Changed
-- **`adoboards config`** now captures `defaultProjectPath` and `userEmail`, and shows provider-specific idea-file tips plus GitHub Copilot setup guidance
-- **`adoboards gen`** now writes generated items into the real backlog layout: Epics and Features as folders, Stories/Bugs/Tasks as flat files
-- **`adoboards status`** now uses git-style sections, hash-based change detection, and clearer moved/deleted summaries
-- **`adoboards diff`** now reconstructs the last pulled version and shows git-style hunks instead of field-by-field output
-- **`adoboards report`** now treats `Committed` as in-progress and reports `Closed` and `Resolved` separately
-- **Packaging** now ships `CHANGELOG.md`, includes `marked`, and reads `adoboards --version` directly from `package.json`
+- **`adoboards diff`** - rewritten to produce git-style unified diff output (`diff --adoboards a/… b/…`, `---`/`+++` headers, `@@` hunks) using an LCS algorithm with 3-line context; hash-based quick check skips unchanged files; origin is reconstructed from stored ADO fields via `adoToMarkdown`
+- **`adoboards status`** - redesigned with git-style section output (replaces the previous `cli-table3` table); change detection now uses SHA-256 hash comparison with a semantic fallback for older clones without stored hashes; staged files are deduplicated against the pending list
+- **`adoboards gen`** - optimised prompts for epic and feature generation; hierarchy prompt now instructs the model to produce full Epic -> Feature -> Story trees with richer frontmatter fields
+- CLI version is now read dynamically from `package.json` instead of being hardcoded
+- `clone` description updated; `gen` help text extended with usage examples and idea resolution order
+
+## [0.3.50] - 2026-03-18
 
 ### Fixed
-- **`adoboards clone`** now stores content hashes in refs, persists `userEmail`, applies default area filters consistently, and creates iteration folders for filtered area subtrees
-- **`adoboards pull`** now refreshes `userEmail` on every sync, refreshes iteration folders, preserves move detection via refs hashes, and only emits conflicts when both local and remote changed without `--force`
-- **`adoboards push`** now resolves parent placeholders more reliably, renames stale `*-pending-*` paths during updates too, stores content hashes after push, and links parents using the correct ADO `workItems` relation URL
-- **`adoboards gen`** now parses multi-file AI output more reliably by handling code fences, missing closing frontmatter markers, YAML task-list noise, and escaped backslashes
+- **`adoboards pull --force`** - Duplicate `cleanedUp` variable declaration causing syntax error
 
-## [0.3.39] - 2026-03-13
+## [0.3.49] - 2026-03-16
+
+### Added
+- **`adoboards pull --force`** - Now auto-cleans up items that exist in local refs but are no longer returned by ADO (deleted/removed online). Deletes the local file and removes the ref entry. Summary shows `Cleaned up: N (removed from ADO)`
+- `newCount` counter fixed - new items downloaded during pull are now counted correctly
+
+### Fixed
+- **`adoboards add .`** - Now only stages files that actually have changes (modified, new, or deleted) - like `git add .`. Previously staged all 145 tracked files regardless of changes
+- Added `isChanged()` helper: compares file hash against stored ref; `id: pending` and untracked files always count as changed
+
+## [0.3.47] - 2026-03-16
+
+### Added
+- **Deletion workflow** - stage and push locally deleted files to remove them from ADO:
+  - `adoboards add <path>` - accepts paths that no longer exist on disk if tracked in refs
+  - `adoboards add .` - automatically includes tracked deletions (files in refs but not on disk)
+  - `adoboards push` - detects staged deletions, sets state to `Removed` in ADO, cleans refs
+  - Push summary shows `Removed: N`
+
+## [0.3.46] - 2026-03-18
+
+### Fixed
+- **`adoboards pull --force`** - Unconditionally overwrites all fetched items (removed `hasLocalEdits` guard that was preventing reset of some files)
+- **`adoboards pull --force`** - Added `else if (force && hasLocalEdits)` branch for files in the correct location with local edits but no remote changes - these were skipped by the previous logic
+- **`adoboards pull --force`** - Now bypasses `lastSync` filter and fetches ALL items from ADO. Previously `--force` still used the incremental filter and only reset recently-changed items
+- **`adoboards pull --force`** - Missing closing `}` for `else` block causing `SyntaxError: Unexpected end of input`
+
+### Added
+- **`adoboards pull --force`** - New flag that overwrites all local edits with remote state (like `git checkout .`):
+  - Fetches all ADO items (no `since` date filter)
+  - Discards local edits unconditionally - no conflict files created
+  - Clears the staged index after running
+  - Summary shows `Forced: local edits discarded`
+  - Normal `pull` without `--force` is unchanged
+
+## [0.3.41] - 2026-03-15
+
+### Fixed
+- **`adoboards report`** - Added missing `Committed` state (was completely absent from all report logic)
+- **`adoboards report`** - Replaced fake `Done` label with real ADO state names (`Closed`, `Resolved`, `Active`, `Committed`, `New`) - each state shown individually with its own item count and points
+- **`adoboards report`** - Summary rows only shown when the state has items (no empty rows)
+- **`adoboards report`** - Attention flags no longer incorrectly flag `Resolved` items for missing story points
+- **`adoboards report`** - `findCurrentSprint` now includes `Committed` items when detecting the active sprint
+
+## [0.3.40] - 2026-03-13
+
+### Fixed
+- **`adoboards push`** - Parent linking now works correctly: ADO relation URLs require `workItems` (capital `I`) - lowercase `workitems` was silently rejected by ADO
+- **`adoboards push`** - Parent link errors now shown as warnings instead of being silently swallowed
+- **`adoboards push`** (update path) - Now also calls `addParentLink` when updating existing items - re-pushing a story fixes a missing parent link
+- **`adoboards push`** - "Already linked" response from ADO is suppressed silently (safe to push multiple times)
+- **`adoboards push`** - Removed unnecessary empty `updateWorkItem` call at the start of `addParentLink`
+
+
 
 ### Added
 - **Epic fields** fully mapped end-to-end:
