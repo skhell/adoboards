@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, relative, resolve, dirname, basename } from 'node:path';
 import chalk from 'chalk';
@@ -33,6 +33,7 @@ export default async function pushCommand(file) {
 
   // Guardrail: filter out non-work-item files and .remote.md conflict files
   const validFiles = [];
+  const deletedFiles = []; // files deleted locally - will be set to Removed in ADO
   const skipped = [];
 
   for (const filePath of filesToPush) {
@@ -42,9 +43,21 @@ export default async function pushCommand(file) {
       continue;
     }
 
+    const absPath = join(root, filePath);
+
+    // File deleted locally - look up ID from refs and queue for removal
+    if (!existsSync(absPath)) {
+      const deletedEntry = Object.entries(refs).find(([, ref]) => ref.path === filePath);
+      if (deletedEntry) {
+        deletedFiles.push({ filePath, id: Number(deletedEntry[0]) });
+      } else {
+        skipped.push({ path: filePath, reason: 'file not found and not tracked in refs' });
+      }
+      continue;
+    }
+
     // Validate frontmatter - must have id and type to be a work item
     try {
-      const absPath = join(root, filePath);
       const content = readFileSync(absPath, 'utf-8');
       const { data } = matter(content);
 
@@ -104,7 +117,7 @@ export default async function pushCommand(file) {
     for (const s of skipped) console.log(chalk.dim(`    ${s.path} - ${s.reason}`));
   }
 
-  if (!validFiles.length) {
+  if (!validFiles.length && !deletedFiles.length) {
     console.log(chalk.yellow('\n  No valid work items to push.\n'));
     return;
   }
@@ -352,6 +365,24 @@ export default async function pushCommand(file) {
   // Save updated refs
   writeRefs(root, refs);
 
+  // Handle deletions: set state to Removed in ADO
+  let removed = 0;
+  if (deletedFiles.length) {
+    console.log(chalk.bold(`\n  Removing ${deletedFiles.length} deleted item${deletedFiles.length !== 1 ? 's' : ''} from ADO...\n`));
+    for (const { filePath, id } of deletedFiles) {
+      process.stdout.write(`  Removing ID ${id} (${filePath.split('/').pop()})... `);
+      try {
+        await ado.updateWorkItem(id, { state: 'Removed' }, config.orgUrl, config.project);
+        delete refs[id];
+        console.log(chalk.green('done'));
+        removed++;
+      } catch (err) {
+        console.log(chalk.red(`failed - ${err.response?.data?.message || err.message}`));
+      }
+    }
+    writeRefs(root, refs);
+  }
+
   // Clear staged list (only if we pushed from staging)
   if (!file) {
     writeStaged(root, []);
@@ -361,6 +392,7 @@ export default async function pushCommand(file) {
   console.log(chalk.bold('\n  Push complete:'));
   if (created) console.log(chalk.green(`    Created: ${created}`));
   if (updated) console.log(chalk.green(`    Updated: ${updated}`));
+  if (removed) console.log(chalk.green(`    Removed: ${removed}`));
   if (errors) console.log(chalk.red(`    Errors:  ${errors}`));
   console.log();
 }
