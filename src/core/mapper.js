@@ -337,15 +337,21 @@ export function buildParentMap(workItems) {
 
 function htmlToSimpleMarkdown(html) {
   if (!html) return '';
-  return html
+  let md = html
     .replace(/<br\s*\/?>/gi, '\n')
+    // Checked checkbox li: <li...><input ... checked ...>
+    .replace(/<li[^>]*>\s*<input[^>]*\bchecked\b[^>]*>\s*/gi, '- [x] ')
+    // Unchecked checkbox li: <li...><input type="checkbox" ...>
+    .replace(/<li[^>]*>\s*<input[^>]*type="checkbox"[^>]*>\s*/gi, '- [ ] ')
+    // Regular list items (strip leading whitespace after tag)
+    .replace(/<li[^>]*>\s*/gi, '- ')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<\/?(ul|ol)>/gi, '\n')
     .replace(/<\/?(p|div)>/gi, '\n')
     .replace(/<\/?(b|strong)>/gi, '**')
     .replace(/<\/?(i|em)>/gi, '_')
-    .replace(/<li>/gi, '- ')
-    .replace(/<\/li>/gi, '\n')
-    .replace(/<\/?(ul|ol)>/gi, '\n')
     .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
@@ -353,4 +359,9 @@ function htmlToSimpleMarkdown(html) {
     .replace(/&#39;/g, "'")
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+
+  // Compact blank lines between consecutive list items
+  md = md.replace(/(^- .+)\n\n(?=- )/gm, '$1\n');
+
+  return md;
 }
