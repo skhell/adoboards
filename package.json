@@ -1,6 +1,6 @@
 {
   "name": "adoboards",
-  "version": "0.3.46",
+  "version": "0.3.58",
   "description": "Git-like CLI for Azure DevOps Boards with AI generation support",
   "keywords": [
     "azure-devops",
@@ -43,7 +43,8 @@
     "conf": "^12.0.0",
     "gray-matter": "^4.0.3",
     "keytar": "^7.9.0",
-    "marked": "^17.0.4"
+    "marked": "^17.0.4",
+    "update-notifier": "^7.3.1"
   },
   "devDependencies": {
     "vitest": "^1.0.0"
