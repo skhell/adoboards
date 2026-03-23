@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, statSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join, relative, resolve } from 'node:path';
 import chalk from 'chalk';
 import matter from 'gray-matter';
@@ -12,29 +13,55 @@ export default function addCommand(files) {
   }
 
   const staged = new Set(readStaged(root));
+  const refs = readRefs(root);
   const toAdd = [];
   const errors = [];
 
+  // Build a set of ref paths for fast lookup (for detecting staged deletions)
+  const refPaths = new Set(Object.values(refs).map((r) => r.path));
+
   for (const file of files) {
     if (file === '.') {
-      // Stage all work item .md files from areas/
+      // Stage only CHANGED files (modified + new) - not unmodified tracked files
       const areasDir = join(root, 'areas');
       const mdFiles = findMdRecursive(areasDir, root);
-      for (const f of mdFiles) toAdd.push(f);
+      for (const f of mdFiles) {
+        if (isChanged(f, root, refs)) toAdd.push(f);
+      }
+
+      // Also stage deleted files: tracked in refs but no longer on disk
+      for (const refPath of refPaths) {
+        if (!existsSync(join(root, refPath))) {
+          toAdd.push(refPath);
+        }
+      }
     } else {
       // Resolve path relative to project root
       const absPath = resolve(file);
       const relPath = relative(root, absPath);
 
       if (!existsSync(absPath)) {
-        errors.push({ path: file, issue: 'file not found' });
+        // File might be a tracked deletion
+        if (refPaths.has(relPath)) {
+          toAdd.push(relPath); // Stage deletion
+        } else {
+          errors.push({ path: file, issue: 'file not found' });
+        }
         continue;
       }
 
       const stat = statSync(absPath);
       if (stat.isDirectory()) {
         const mdFiles = findMdRecursive(absPath, root);
-        for (const f of mdFiles) toAdd.push(f);
+        for (const f of mdFiles) {
+          if (isChanged(f, root, refs)) toAdd.push(f);
+        }
+        // Also include tracked deletions under this directory
+        for (const refPath of refPaths) {
+          if (refPath.startsWith(relPath + '/') && !existsSync(join(root, refPath))) {
+            toAdd.push(refPath);
+          }
+        }
       } else if (relPath.endsWith('.md') && !relPath.endsWith('.remote.md')) {
         toAdd.push(relPath);
       }
@@ -44,7 +71,6 @@ export default function addCommand(files) {
   // Validate each file before staging
   const validTypes = ['Epic', 'Feature', 'Story', 'Bug', 'Task', 'Issue'];
   const validToStage = [];
-  const refs = readRefs(root);
   const config = readConfig(root);
   const warnings = [];
 
@@ -52,6 +78,15 @@ export default function addCommand(files) {
     if (staged.has(filePath)) continue; // already staged
 
     const absPath = join(root, filePath);
+
+    // Deleted file: tracked in refs, no longer on disk - stage as deletion without frontmatter checks
+    if (!existsSync(absPath)) {
+      if (refPaths.has(filePath)) {
+        validToStage.push(filePath);
+      }
+      continue;
+    }
+
     try {
       const content = readFileSync(absPath, 'utf-8');
       const { data } = matter(content);
@@ -280,4 +315,28 @@ function findMdRecursive(dir, root) {
     }
   }
   return results;
+}
+
+/**
+ * Returns true if a file has changes worth staging:
+ * - New file (no ref entry matching its ID)
+ * - Modified file (hash differs from stored ref)
+ * Untracked unmodified files return false so "add ." doesn't stage everything.
+ */
+function isChanged(filePath, root, refs) {
+  try {
+    const content = readFileSync(join(root, filePath), 'utf-8');
+    const { data } = matter(content);
+    if (!data.id) return true; // no id - treat as new/unknown
+
+    if (data.id === 'pending') return true; // always stage new pending items
+
+    const ref = refs[data.id];
+    if (!ref) return true; // not tracked → new
+
+    const currentHash = createHash('sha256').update(content).digest('hex');
+    return currentHash !== ref.hash; // only stage if content changed
+  } catch {
+    return true; // if we can't read it, let validation handle it
+  }
 }
