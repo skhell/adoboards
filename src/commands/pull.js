@@ -83,6 +83,7 @@ export default async function pullCommand(opts = {}) {
   let newCount = 0;
   let conflicts = 0;
   let movedBack = 0;
+  let cleanedUp = 0;
 
   for (const wi of workItems) {
     const id = wi.id;
@@ -165,6 +166,25 @@ export default async function pullCommand(opts = {}) {
       const markdown = adoToMarkdown(wi);
       writeFileSync(join(root, correctPath), markdown, 'utf-8');
       refs[id] = { path: correctPath, rev: wi.rev, hash: createHash('sha256').update(markdown).digest('hex'), fields: wi.fields, parent: wi.parent };
+      newCount++;
+    }
+  }
+
+  // --force only: clean up items that are in refs but no longer returned by ADO
+  // (items removed/deleted from ADO stop appearing in WIQL results)
+  if (force) {
+    const returnedIds = new Set(workItems.map((wi) => wi.id));
+    for (const [id, ref] of Object.entries(refs)) {
+      if (!returnedIds.has(Number(id))) {
+        // Item no longer exists in ADO - remove local file and ref
+        const localFile = join(root, ref.path);
+        if (existsSync(localFile)) {
+          removeFileAndCleanup(root, ref.path);
+          console.log(chalk.dim(`  Cleaned up: ${ref.path} (no longer in ADO)`));
+        }
+        delete refs[id];
+        cleanedUp++;
+      }
     }
   }
 
@@ -251,14 +271,20 @@ export default async function pullCommand(opts = {}) {
     console.log(chalk.dim('  Staged index cleared (--force).'));
   }
 
+  // Prune empty directories left behind after deletes
+  if (force && cleanedUp) {
+    pruneEmptyDirs(join(root, 'areas'));
+  }
+
   // Summary
   console.log(chalk.bold('\n  Pull complete:'));
   if (updatedCount) console.log(chalk.green(`    Updated:    ${updatedCount}`));
   if (newCount) console.log(chalk.green(`    New:         ${newCount}`));
   if (movedBack) console.log(chalk.magenta(`    Moved back: ${movedBack}`));
+  if (cleanedUp) console.log(chalk.dim(`    Cleaned up: ${cleanedUp} (removed from ADO)`));
   if (conflicts) console.log(chalk.yellow(`    Conflicts:  ${conflicts} (check .remote.md files)`));
   if (force) console.log(chalk.yellow(`    Forced:     local edits discarded`));
-  if (!updatedCount && !newCount && !conflicts && !movedBack) console.log(chalk.dim('    No changes.'));
+  if (!updatedCount && !newCount && !conflicts && !movedBack && !cleanedUp) console.log(chalk.dim('    No changes.'));
   console.log();
 }
 
@@ -402,7 +428,7 @@ function scanForIds(dir, root, map) {
 }
 
 /**
- * Remove a file and clean up empty parent directories.
+ * Remove a file (and its .remote.md companion) then clean up empty parent directories.
  */
 function removeFileAndCleanup(root, filePath) {
   const absPath = join(root, filePath);
@@ -411,6 +437,10 @@ function removeFileAndCleanup(root, filePath) {
   } catch {
     return;
   }
+
+  // Also remove the .remote.md conflict file if present
+  const remotePath = absPath.replace(/\.md$/, '.remote.md');
+  try { unlinkSync(remotePath); } catch { /* not present, ignore */ }
 
   // Walk up and remove empty directories (stop at areas/)
   let dir = absPath.replace(/\/[^/]+$/, '');
@@ -428,6 +458,28 @@ function removeFileAndCleanup(root, filePath) {
       break;
     }
   }
+}
+
+/**
+ * Recursively remove empty directories under a given root (bottom-up).
+ * A directory is considered empty if it contains no files and no non-empty subdirectories.
+ */
+function pruneEmptyDirs(dir) {
+  let entries;
+  try { entries = readdirSync(dir); } catch { return; }
+
+  for (const entry of entries) {
+    const full = join(dir, entry);
+    try {
+      if (statSync(full).isDirectory()) pruneEmptyDirs(full);
+    } catch { /* skip */ }
+  }
+
+  // Re-read after recursing - children may have been removed
+  try {
+    const remaining = readdirSync(dir);
+    if (remaining.length === 0) rmdirSync(dir);
+  } catch { /* skip */ }
 }
 
 function flattenTree(node, prefix = '') {
