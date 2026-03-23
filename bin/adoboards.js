@@ -2,9 +2,13 @@
 
 import { Command } from 'commander';
 import { createRequire } from 'node:module';
+import updateNotifier from 'update-notifier';
 
 const require = createRequire(import.meta.url);
-const { version } = require('../package.json');
+const pkg = require('../package.json');
+const { version } = pkg;
+
+updateNotifier({ pkg }).notify();
 
 const program = new Command();
 
@@ -120,13 +124,19 @@ Run "adoboards config" to set a default project path and provider-specific tips.
   });
 
 program
-  .command('optimize [path]')
-  .description('AI-optimize work item content (descriptions, acceptance criteria)')
-  .option('--apply', 'Write changes to files (default: preview only)')
+  .command('optimize [target]')
+  .description('AI-optimize work item content (descriptions, acceptance criteria). Target can be a work item ID (e.g. 1234) or a file/directory path.')
   .option('--provider <name>', 'AI provider: anthropic, openai, gemini, azure-openai')
-  .action(async (path, opts) => {
+  .addHelpText('after', `
+Examples:
+  adoboards optimize 1234              optimize a single story/bug/task by ID
+  adoboards optimize 1234              optimize a feature + all connected stories (prompts Y/N)
+  adoboards optimize 1234              optimize an epic + features + stories (prompts Y/N)
+  adoboards optimize ./path/to/file.md optimize a specific file
+  adoboards optimize .                 optimize all work items in cwd`)
+  .action(async (target, opts) => {
     const { default: optimizeCommand } = await import('../src/commands/optimize.js');
-    await optimizeCommand(path, opts);
+    await optimizeCommand(target, opts);
   });
 
 program

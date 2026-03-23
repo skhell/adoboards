@@ -114,7 +114,7 @@ export default function statusCommand() {
   const totalChanges = stagedList.length + modified.length + pending.length + moved.length + deleted.length;
 
   if (!totalChanges && !folderWarnings.length) {
-    console.log(chalk.dim('  Nothing to commit, working tree is clean.\n'));
+    console.log(chalk.dim('  Nothing to commit, working tree clean.\n'));
     return;
   }
 

@@ -332,7 +332,7 @@ function isChanged(filePath, root, refs) {
     if (data.id === 'pending') return true; // always stage new pending items
 
     const ref = refs[data.id];
-    if (!ref) return true; // not tracked → new
+    if (!ref) return true; // not tracked -> new
 
     const currentHash = createHash('sha256').update(content).digest('hex');
     return currentHash !== ref.hash; // only stage if content changed

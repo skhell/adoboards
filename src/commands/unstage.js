@@ -5,7 +5,7 @@ import { readStaged, writeStaged, findProjectRoot } from '../core/state.js';
 export async function unstage(files, opts) {
   const root = findProjectRoot('.');
   if (!root) {
-    console.error(chalk.red('\n  Not inside an adoboards project. Run adoboards clone first or execute the command from within a project directory.\n'));
+    console.error(chalk.red('\n  Not inside an adoboards project. Run adoboards clone first.\n'));
     process.exit(1);
   }
 
